@@ -1,0 +1,15 @@
+消防监控管理系统 - Alembic 数据库迁移
+
+使用方式:
+
+# 创建新迁移
+alembic revision --autogenerate -m "描述"
+
+# 升级到最新版本
+alembic upgrade head
+
+# 降级到指定版本
+alembic downgrade -1
+
+# 查看当前版本
+alembic current

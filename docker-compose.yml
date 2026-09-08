@@ -1,0 +1,88 @@
+version: "3.9"
+
+services:
+  # PostgreSQL 数据库
+  postgres:
+    image: postgres:15-alpine
+    container_name: fire_alarm_postgres
+    environment:
+      POSTGRES_USER: fire
+      POSTGRES_PASSWORD: fire
+      POSTGRES_DB: fire_alarm_sys
+      TZ: Asia/Shanghai
+      PGTZ: Asia/Shanghai
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fire -d fire_alarm_sys"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - fire_alarm_net
+
+  # Redis 缓存
+  redis:
+    image: redis:7-alpine
+    container_name: fire_alarm_redis
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - fire_alarm_net
+
+  # 后端服务
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: fire_alarm_backend
+    env_file:
+      - .env.docker
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    volumes:
+      - ./backend:/app
+      - /app/__pycache__
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["sh", "scripts/entrypoint.sh", "--reload"]
+    networks:
+      - fire_alarm_net
+
+  # 前端服务
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: fire_alarm_frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - fire_alarm_net
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  fire_alarm_net:
+    driver: bridge
