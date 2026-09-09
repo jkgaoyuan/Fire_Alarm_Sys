@@ -4,7 +4,7 @@
 
 from datetime import date, datetime
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # 计划 一、设备状态枚举
 DEVICE_STATUS_PATTERN = r"^(normal|alarm|fault|shield|offline|retired)$"
@@ -20,8 +20,7 @@ class DeviceTypeOut(BaseModel):
     attribute_schema: dict = {}
     icon_url: str | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class DeviceBase(BaseModel):
@@ -122,8 +121,7 @@ class DeviceOut(BaseModel):
     def _decimal_to_float(cls, v):
         return float(v) if v is not None else None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class DeviceListOut(BaseModel):

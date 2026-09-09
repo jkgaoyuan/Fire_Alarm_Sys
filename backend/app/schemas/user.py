@@ -4,7 +4,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class UserRoleOut(BaseModel):
@@ -14,8 +14,7 @@ class UserRoleOut(BaseModel):
     role_code: str
     role_name: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserOut(BaseModel):
@@ -33,8 +32,7 @@ class UserOut(BaseModel):
     roles: list[UserRoleOut] = []
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserListOut(BaseModel):
@@ -58,8 +56,7 @@ class UserMeOut(BaseModel):
     roles: list[dict] = []
     data_scope: str = "self"
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserCreate(BaseModel):

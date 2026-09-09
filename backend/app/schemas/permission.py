@@ -2,7 +2,7 @@
 权限相关 Pydantic Schema
 """
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class PermissionOut(BaseModel):
@@ -19,8 +19,7 @@ class PermissionOut(BaseModel):
     sort_order: int = 0
     children: list = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class MenuTreeOut(BaseModel):

@@ -7,7 +7,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 ALARM_TYPE_PATTERN = r"^(fire|pre_fire|fault|shield)$"
 ALARM_STATUS_PATTERN = r"^(pending|confirmed|false_alarm|processing|resolved)$"
@@ -53,8 +53,7 @@ class AlarmOut(BaseModel):
     def _decimal_to_float(cls, v):
         return float(v) if v is not None else None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AlarmListOut(BaseModel):

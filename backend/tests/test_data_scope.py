@@ -13,7 +13,7 @@ from app.services.user_service import apply_data_scope
 
 
 # 定义测试用 mock 设备表（添加到 Base.metadata，会被 db_engine fixture 自动建表）
-class TestDevice(Base):
+class MockDevice(Base):
     __tablename__ = "test_devices"
 
     id = Column(Integer, primary_key=True)
@@ -45,13 +45,13 @@ async def test_data_scope_all(client, db_session):
     await db_session.refresh(user)
 
     # 插入 mock 数据
-    dev1 = TestDevice(name="设备A", org_id=org.id, created_by=user.id)
-    dev2 = TestDevice(name="设备B", org_id=None, created_by=None)
+    dev1 = MockDevice(name="设备A", org_id=org.id, created_by=user.id)
+    dev2 = MockDevice(name="设备B", org_id=None, created_by=None)
     db_session.add(dev1)
     db_session.add(dev2)
     await db_session.commit()
 
-    query = select(TestDevice)
+    query = select(MockDevice)
     filtered = await apply_data_scope(query, user, db_session)
     result = await db_session.execute(filtered)
     items = result.scalars().all()
@@ -93,15 +93,15 @@ async def test_data_scope_dept(client, db_session):
     await db_session.refresh(user)
 
     # 插入设备：父部门、子部门、其他部门
-    dev_parent = TestDevice(name="父设备", org_id=parent_org.id, created_by=user.id)
-    dev_child = TestDevice(name="子设备", org_id=child_org.id, created_by=user.id)
-    dev_other = TestDevice(name="其他设备", org_id=other_org.id, created_by=user.id)
+    dev_parent = MockDevice(name="父设备", org_id=parent_org.id, created_by=user.id)
+    dev_child = MockDevice(name="子设备", org_id=child_org.id, created_by=user.id)
+    dev_other = MockDevice(name="其他设备", org_id=other_org.id, created_by=user.id)
     db_session.add(dev_parent)
     db_session.add(dev_child)
     db_session.add(dev_other)
     await db_session.commit()
 
-    query = select(TestDevice)
+    query = select(MockDevice)
     filtered = await apply_data_scope(query, user, db_session)
     result = await db_session.execute(filtered)
     items = result.scalars().all()
@@ -143,13 +143,13 @@ async def test_data_scope_self(client, db_session):
     await db_session.refresh(user_b)
 
     # 插入设备：user_a 创建、user_b 创建
-    dev_a = TestDevice(name="A的设备", org_id=org.id, created_by=user_a.id)
-    dev_b = TestDevice(name="B的设备", org_id=org.id, created_by=user_b.id)
+    dev_a = MockDevice(name="A的设备", org_id=org.id, created_by=user_a.id)
+    dev_b = MockDevice(name="B的设备", org_id=org.id, created_by=user_b.id)
     db_session.add(dev_a)
     db_session.add(dev_b)
     await db_session.commit()
 
-    query = select(TestDevice)
+    query = select(MockDevice)
     filtered = await apply_data_scope(query, user_a, db_session)
     result = await db_session.execute(filtered)
     items = result.scalars().all()

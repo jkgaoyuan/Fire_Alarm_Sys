@@ -11,7 +11,7 @@ from app.models.base import Base
 
 
 # 定义测试模型
-class TestItem(Base):
+class MockItem(Base):
     __tablename__ = "test_items"
 
     id = Column(Integer, primary_key=True)
@@ -21,13 +21,13 @@ class TestItem(Base):
 
 @pytest.fixture
 def item_crud():
-    return CRUDBase(TestItem)
+    return CRUDBase(MockItem)
 
 
 @pytest.mark.asyncio
 async def test_crud_get(client, db_session, item_crud):
     """get 应返回指定 ID 的对象"""
-    obj = TestItem(name="测试项", description="描述")
+    obj = MockItem(name="测试项", description="描述")
     db_session.add(obj)
     await db_session.commit()
     await db_session.refresh(obj)
@@ -49,7 +49,7 @@ async def test_crud_get_not_found(client, db_session, item_crud):
 async def test_crud_get_multi(client, db_session, item_crud):
     """get_multi 应返回分页结果"""
     for i in range(5):
-        db_session.add(TestItem(name=f"item_{i}"))
+        db_session.add(MockItem(name=f"item_{i}"))
     await db_session.commit()
 
     items = await item_crud.get_multi(db_session, skip=0, limit=3)
@@ -61,7 +61,7 @@ async def test_crud_get_multi(client, db_session, item_crud):
 async def test_crud_get_multi_skip(client, db_session, item_crud):
     """get_multi skip 应生效"""
     for i in range(3):
-        db_session.add(TestItem(name=f"item_{i}"))
+        db_session.add(MockItem(name=f"item_{i}"))
     await db_session.commit()
 
     items = await item_crud.get_multi(db_session, skip=1, limit=10)
@@ -91,7 +91,7 @@ async def test_crud_update_with_schema(client, db_session, item_crud):
     """update 使用 Pydantic schema 应更新字段"""
     from pydantic import BaseModel
 
-    obj = TestItem(name="旧名称", description="旧描述")
+    obj = MockItem(name="旧名称", description="旧描述")
     db_session.add(obj)
     await db_session.commit()
     await db_session.refresh(obj)
@@ -110,7 +110,7 @@ async def test_crud_update_with_schema(client, db_session, item_crud):
 @pytest.mark.asyncio
 async def test_crud_update_with_dict(client, db_session, item_crud):
     """update 使用 dict 应更新字段"""
-    obj = TestItem(name="旧名称", description="旧描述")
+    obj = MockItem(name="旧名称", description="旧描述")
     db_session.add(obj)
     await db_session.commit()
     await db_session.refresh(obj)
@@ -126,7 +126,7 @@ async def test_crud_update_with_dict(client, db_session, item_crud):
 @pytest.mark.asyncio
 async def test_crud_delete(client, db_session, item_crud):
     """delete 应删除对象并返回被删除对象"""
-    obj = TestItem(name="待删除")
+    obj = MockItem(name="待删除")
     db_session.add(obj)
     await db_session.commit()
     await db_session.refresh(obj)

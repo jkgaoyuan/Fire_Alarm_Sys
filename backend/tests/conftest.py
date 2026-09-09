@@ -4,7 +4,7 @@ pytest 全局 fixtures
 
 import fakeredis
 import pytest_asyncio
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.db.redis import get_redis_pool
@@ -70,7 +70,9 @@ async def client(db_session, fake_redis):
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_redis_pool] = override_get_redis
 
-    async with AsyncClient(app=app, base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         yield ac
 
 from app.core.security import create_access_token, get_password_hash

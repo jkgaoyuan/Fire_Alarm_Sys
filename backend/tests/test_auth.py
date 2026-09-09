@@ -133,10 +133,9 @@ async def test_refresh_token(client, db_session, fake_redis):
     tokens = await create_token_pair(user)
     await save_token_whitelist(fake_redis, user.id, tokens["refresh_jti"])
 
-    response = await client.post(
-        "/api/v1/auth/refresh",
-        cookies={"refresh_token": tokens["refresh_token"]},
-    )
+    client.cookies.set("refresh_token", tokens["refresh_token"])
+    response = await client.post("/api/v1/auth/refresh")
+    client.cookies.clear()
     assert response.status_code == 200
     data = response.json()
     assert data["code"] == 200
