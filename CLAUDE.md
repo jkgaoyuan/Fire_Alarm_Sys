@@ -165,7 +165,7 @@
 | P2-003 | PRD 3.3+ 后续模块排期 | P2 | [ ] | 2026-09-09 | **部分完成**：3.3 已完成计划编写 → 实现 → 验证全链路（`docs/plan/3.3-...md` + `docs/test/3.3-...测试执行结果.md`）。**剩余**：inspection / drill / linkage / statistics 等 3.4+ 模块仍是 12 行占位页，无计划文档。3.3 已为其预留：`alarms.pending_since`（FR-025 超时升级）、`alarms` 主键与状态机（3.5 闭环）、`echarts` 依赖（3.9 报表复用） |
 | P2-005 | 部署前替换 JWT `SECRET_KEY` | P2 | [ ] | 2026-09-09 | `backend/app/core/config.py` 与 `backend/.env.example` 中均为占位值 `your-super-secret-key-change-in-production`，仓库内无实际 `.env`。当前 Token 可被伪造，**任何对外演示/公网部署前必须替换**。3.3 的 WS Ticket 与设备上报 `DEVICE_REPORT_KEY` 同属该密钥体系，一并换。**已补齐**：`backend_storage` 卷已于 P2-008 加入 docker-compose |
 | P2-006 | 软删除设备占用编码的提示语误导 | P2 | [ ] | 2026-09-09 | `device_code` 唯一性校验包含 `is_deleted` 行（设计正确，防约束冲突），但列表任何视图都看不到已删设备，新建/导入时报「设备编码已存在」会让用户无从排查。建议文案改为「设备编码已被已删除档案占用: XXX」并给出恢复入口 |
-| P2-007 | 镜像依赖与 `requirements.txt` 漂移无校验 | P2 | [ ] | 2026-09-09 | 3.2 新增 `openpyxl`、**3.3 新增 `pillow`** 都踩过同一坑：bind-mount 的新代码在旧镜像里 `ModuleNotFoundError` → `fire_alarm_backend` 崩溃循环，须手动 `docker compose build backend`（3.3 同时需 build frontend 才让 `nginx.conf`/新页面生效）。建议 `entrypoint.sh` 启动前做一次依赖导入预检并给出明确提示 |
+| P2-007 | 镜像依赖与 `requirements.txt` 漂移无校验 | P2 | [x] | 2026-09-09 | **已完成**（commit `9bf98ed`）。`entrypoint.sh` 在启动 uvicorn 前校验 18 个关键运行时依赖的可导入性；缺失时提前退出并提示「执行 `docker compose build backend` 后重试」，避免 `ModuleNotFoundError` 导致的崩溃循环 |
 
   维护规则：
   - 新任务从会话摘要中提取，按优先级插入
