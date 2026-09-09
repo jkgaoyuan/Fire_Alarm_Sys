@@ -180,12 +180,24 @@ async def list_devices(
     return list(result.scalars().all()), total
 
 
-async def get_device(db: AsyncSession, device_id: int) -> Device | None:
-    """按 ID 查询设备（含类型/区域/创建人），逻辑删除的不可见"""
-    device = await device_crud.get_with_relations(db, device_id)
-    if device is None or device.is_deleted:
-        return None
-    return device
+async def _get_device_in_scope(
+    db: AsyncSession, device_id: int, user: User
+) -> Device | None:
+    """按 ID 查询设备并叠加用户数据范围；逻辑删除与越权均视为不存在。"""
+    base = select(Device).where(Device.id == device_id, Device.is_deleted.is_(False))
+    scoped = await apply_data_scope(base, user, db)
+    stmt = scoped.options(
+        selectinload(Device.device_type),
+        selectinload(Device.org),
+        selectinload(Device.creator),
+    )
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
+
+
+async def get_device(db: AsyncSession, device_id: int, user: User) -> Device | None:
+    """按 ID 查询设备（含类型/区域/创建人），已叠加数据范围。"""
+    return await _get_device_in_scope(db, device_id, user)
 
 
 async def is_code_taken(
@@ -265,8 +277,8 @@ async def update_device(
     更新设备。已退役设备禁止编辑（计划 7.3 验收项）。
     status 不接受 retired —— 退役必须走 /retire 以留下变更原因。
     """
-    device = await device_crud.get_with_relations(db, device_id)
-    if device is None or device.is_deleted:
+    device = await _get_device_in_scope(db, device_id, user)
+    if device is None:
         return None
     if device.status == TERMINAL_STATUS:
         raise AuthError(400, "设备已退役，禁止编辑")
@@ -322,8 +334,8 @@ async def retire_device(
     设备退役：status -> retired，is_deleted 保持 FALSE，关联历史全部保留。
     已是 retired 的设备不可重复退役。
     """
-    device = await device_crud.get_with_relations(db, device_id)
-    if device is None or device.is_deleted:
+    device = await _get_device_in_scope(db, device_id, user)
+    if device is None:
         return None
     if device.status == TERMINAL_STATUS:
         raise AuthError(400, "设备已处于退役状态，无需重复退役")
@@ -345,8 +357,8 @@ async def retire_device(
 
 async def delete_device(db: AsyncSession, device_id: int, user: User) -> Device | None:
     """逻辑删除（is_deleted=TRUE）。物理删除会破坏关联历史，故不提供。"""
-    device = await device_crud.get_with_relations(db, device_id)
-    if device is None or device.is_deleted:
+    device = await _get_device_in_scope(db, device_id, user)
+    if device is None:
         return None
 
     old_status = device.status

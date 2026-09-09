@@ -187,10 +187,10 @@ async def import_devices_api(
 async def get_device_api(
     device_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_permission("device:view")),
+    user: User = Depends(require_permission("device:view")),
 ):
-    """设备详情（含类型名称、区域名称、创建人）"""
-    device = await get_device(db, device_id)
+    """设备详情（含类型名称、区域名称、创建人），已叠加数据范围"""
+    device = await get_device(db, device_id, user)
     if device is None:
         return {"code": 404, "message": "设备不存在", "data": None}
     return {
@@ -241,10 +241,12 @@ async def get_device_history_api(
     device_id: int,
     limit: int = Query(100, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_permission("device:view")),
+    user: User = Depends(require_permission("device:view")),
 ):
-    """设备历史记录时间轴（按时间倒序）"""
-    history = await device_history_service.get_device_history(db, device_id, limit=limit)
+    """设备历史记录时间轴（按时间倒序），已叠加数据范围"""
+    history = await device_history_service.get_device_history(
+        db, device_id, user=user, limit=limit
+    )
     if history is None:
         return {"code": 404, "message": "设备不存在", "data": None}
     return {
@@ -262,16 +264,22 @@ async def get_device_trajectory_api(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_permission("device:view")),
+    user: User = Depends(require_permission("device:view")),
 ):
-    """设备历史轨迹（FR-018：单类别时序，按时间升序，最长 90 天）"""
+    """设备历史轨迹（FR-018：单类别时序，按时间升序，最长 90 天），已叠加数据范围"""
     try:
         begin, finish = device_history_service.resolve_window(start, end)
     except ValueError as exc:
         return {"code": 400, "message": str(exc), "data": None}
 
     payload = await device_history_service.get_device_trajectory(
-        db, device_id, start=begin, end=finish, page=page, page_size=page_size
+        db,
+        device_id,
+        user=user,
+        start=begin,
+        end=finish,
+        page=page,
+        page_size=page_size,
     )
     if payload is None:
         return {"code": 404, "message": "设备不存在", "data": None}
@@ -289,10 +297,10 @@ async def export_device_trajectory_api(
     start: datetime | None = Query(None),
     end: datetime | None = Query(None),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_permission("device:view")),
+    user: User = Depends(require_permission("device:view")),
 ):
     """
-    轨迹导出（≤1 万行同步导出）。
+    轨迹导出（≤1 万行同步导出），已叠加数据范围。
 
     超上限直接拒绝并提示缩小区间；异步导出任务属 3.9 数据报表范围。
     """
@@ -304,6 +312,7 @@ async def export_device_trajectory_api(
     payload = await device_history_service.get_device_trajectory(
         db,
         device_id,
+        user=user,
         start=begin,
         end=finish,
         page=1,

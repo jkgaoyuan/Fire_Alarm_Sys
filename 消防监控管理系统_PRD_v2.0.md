@@ -339,6 +339,8 @@ CREATE TABLE organizations (
     org_name VARCHAR(100) NOT NULL,
     org_type VARCHAR(20),  -- building / floor / zone
     map_image_url VARCHAR(500),  -- 平面图
+    map_image_width INT,  -- 3.3 新增：原始图宽（前端坐标换算）
+    map_image_height INT,  -- 3.3 新增：原始图高
     sort_order INT DEFAULT 0,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -369,6 +371,7 @@ CREATE TABLE devices (
     status VARCHAR(20) DEFAULT 'normal',  -- normal / alarm / fault / shield / offline / retired
     map_x DECIMAL(10, 2),  -- 平面图 X 坐标
     map_y DECIMAL(10, 2),  -- 平面图 Y 坐标
+    last_report_at TIMESTAMPTZ,  -- 3.3 新增：最近一次设备上报时间，用于在线/离线判定
     -- qr_code_url VARCHAR(500),  -- 【已取消】二维码标签功能取消，此字段不再使用
     attributes JSONB,  -- 扩展属性（仅存非筛选属性）
     is_deleted BOOLEAN DEFAULT FALSE,  -- 新增：逻辑删除标记
@@ -381,11 +384,14 @@ CREATE TABLE devices (
 CREATE INDEX idx_devices_brand ON devices(brand);
 CREATE INDEX idx_devices_spec ON devices(spec);
 CREATE INDEX idx_devices_created_by ON devices(created_by);  -- 新增：数据权限查询优化
+CREATE INDEX idx_devices_last_report_at ON devices(last_report_at);  -- 3.3 新增：离线扫描
 
 -- 4. 报警与联动
 CREATE TABLE alarms (
     id BIGSERIAL PRIMARY KEY,
     device_id BIGINT REFERENCES devices(id),
+    device_code VARCHAR(100),  -- 3.3 新增：报警时从 devices.device_code 快照，列表展示免 JOIN
+    org_id BIGINT REFERENCES organizations(id),  -- 3.3 新增：设备归属区域快照，实时推送/数据权限过滤
     alarm_type VARCHAR(20) NOT NULL,  -- fire / pre_fire / fault / shield
     alarm_level VARCHAR(20),  -- critical / major / minor
     status VARCHAR(20) DEFAULT 'pending',  -- pending / confirmed / false_alarm / processing / resolved
@@ -395,10 +401,21 @@ CREATE TABLE alarms (
     false_reason TEXT,
     location_description VARCHAR(255),
     is_drill BOOLEAN DEFAULT FALSE,
+    pending_since TIMESTAMPTZ,  -- 3.3 新增：首次进入 pending 的时间，供后续超时升级（FR-025）使用
+    silenced_at TIMESTAMPTZ,  -- 3.3 新增：消音时间
+    silenced_by BIGINT REFERENCES users(id),  -- 3.3 新增：消音操作人
+    reset_at TIMESTAMPTZ,  -- 3.3 新增：复位时间
+    reset_by BIGINT REFERENCES users(id),  -- 3.3 新增：复位操作人
+    reset_physical_restored BOOLEAN DEFAULT FALSE,  -- 3.3 新增：复位时是否已物理恢复
     created_by BIGINT REFERENCES users(id),  -- 新增：数据权限 'self' 范围依赖
     created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),  -- 3.3 新增：状态/消音/复位变更时间
     resolved_at TIMESTAMPTZ
 );
+
+-- 3.3 新增索引
+CREATE INDEX idx_alarms_org_id ON alarms(org_id);
+CREATE INDEX idx_alarms_device_id_status ON alarms(device_id, status);
 
 CREATE TABLE linkage_plans (
     id BIGSERIAL PRIMARY KEY,
@@ -545,6 +562,12 @@ CREATE INDEX idx_inspection_tasks_date ON inspection_tasks(task_date);
 CREATE INDEX idx_audit_logs_user ON audit_logs(user_id, created_at);
 ```
 
+### 4.2.1 3.3 模块建表/升级说明
+
+- 上表已按 3.3 实现结论补列（`devices.last_report_at`、`organizations.map_image_width/height`、`alarms` 的 `org_id/device_code/pending_since/silenced_*/reset_*/updated_at`）。
+- 3.3 沿用 DEC-006：开发期通过 `Base.metadata.create_all()` 建表；`alembic/versions/` 仍为空，正式发布前需统一补 Alembic 基线（待办 P1-006）。
+- **既有数据库升级**：`create_all` 不会给已存在的表补列，必须从 `backend/scripts/sql/3_3_alter.sql` 执行手工 ALTER；该脚本已随仓库维护，缺失时 3.3 服务启动即 500。
+
 ---
 
 ## 5. API 接口规范
@@ -573,6 +596,8 @@ CREATE INDEX idx_audit_logs_user ON audit_logs(user_id, created_at);
 | POST | `/api/v1/devices/import` | 批量导入（multipart/form-data） |
 | ~~GET~~ | ~~`/api/v1/devices/{id}/qrcode`~~ | ~~获取设备二维码~~ |
 | GET | `/api/v1/devices/{id}/history` | 设备历史记录 |
+| GET | `/api/v1/devices/{id}/trajectory` | **3.3 新增**：设备状态变化轨迹（单类别时序） |
+| GET | `/api/v1/devices/{id}/trajectory/export` | **3.3 新增**：轨迹导出（xlsx/csv，≤1 万行） |
 
 ### 5.3 实时监控
 
@@ -580,11 +605,39 @@ CREATE INDEX idx_audit_logs_user ON audit_logs(user_id, created_at);
 |------|------|------|
 | GET | `/api/v1/monitor/dashboard` | 监控大屏统计数据 |
 | GET | `/api/v1/monitor/alarms/recent` | 最近报警列表 |
+| POST | `/api/v1/monitor/ws-ticket` | **3.3 新增**：申请 WebSocket 一次性 Ticket |
+| POST | `/api/v1/monitor/report` | **3.3 新增**：设备状态/报警上报通道（模拟器/未来 MQTT 适配） |
+| GET | `/api/v1/monitor/map` | **3.3 新增**：获取当前用户可见地图与设备点位 |
+| GET | `/api/v1/monitor/map/devices` | **3.3 新增**：视口内设备点位懒加载 |
 | WebSocket | `/ws/devices` | 设备状态实时推送（含断线重连补偿） |
 | GET | `/api/v1/alarms` | 报警列表 |
+| GET | `/api/v1/alarms/{id}` | **3.3 新增**：报警详情 |
 | POST | `/api/v1/alarms/{id}/confirm` | 火警确认 |
 | POST | `/api/v1/alarms/{id}/silence` | **新增**：报警消音 |
+| POST | `/api/v1/alarms/{id}/reset` | **3.3 新增**：报警/设备复位 |
+| POST | `/api/v1/organizations/{id}/map-image` | **3.3 新增**：上传/更新区域平面图 |
+| DELETE | `/api/v1/organizations/{id}/map-image` | **3.3 新增**：删除区域平面图 |
 | POST | `/api/v1/alarms/{id}/linkage/execute` | 手动执行联动 |
+
+### 5.3.1 3.3 实现补充说明
+
+**WebSocket 帧协议与认证**
+- 浏览器 WebSocket 无法携带标准 `Authorization` 头，采用 **Ticket 方案**：客户端先调用 `POST /monitor/ws-ticket` 获取一次性 Ticket，连接时通过 query `?ticket=...` 交换；Ticket 在 Redis 中 TTL 60 秒，避免长期 Token 进入 access_log（DEC-010）。
+- 帧格式统一为 `{id, type, ts, data}`，核心事件：`device_status`、`alarm_new`、`alarm_silenced`、`resync_required`、`pong`。`pong.id` 为空串，仅作心跳，不参与去重。
+- 服务端使用 **Redis Stream + 每进程消费者组** 扇出：设备上报 → `XADD` → 各 uvicorn worker 的独立 consumer 读取并按用户 `org_id` 范围过滤后推送；断线重连时通过 `XRANGE` 补发最近 500 条，超出则回退 `resync_required`（DEC-009）。
+
+**平面图继承规则（A-18）**
+- `organizations.map_image_url` 挂在 `floor` 类型节点；`devices.org_id` 通常指向更细粒度的 `zone` 叶子节点。
+- 前端取图时，从设备所在 `zone` 向上递归到根，取**最近持有 `map_image_url` 的祖先 floor 节点**的底图；后端 `/monitor/map` 接口已实现该继承逻辑。
+
+**已确认的产品问题（OQ 默认结论）**
+- OQ-1：`data_scope='self'` 在报警/实时监控场景降级为按设备归属区域过滤（等价 `dept`），否则自动上报报警无创建人导致 self 用户永远收不到推送。
+- OQ-2：无 MQTT 回读时，复位必须显式勾选「已物理恢复」并写入审计字段 `reset_physical_restored`（DEC-011）。
+- OQ-3：消防主管保留 `alarm:view` 与系统管理/档案权限；`alarm:silence/reset` 等处置权限默认赋予值班员/系统管理员，主管不自动继承写权限（与 3.1 矩阵一致）。
+- OQ-4：消音分两层——REST `POST /alarms/{id}/silence` 留痕并广播 `alarm_silenced` 停止该条报警音频；全局静音为客户端 localStorage/内存态，不同浏览器标签不强制同步。
+- OQ-5：3.3 定时任务（离线检测、Stream 裁剪）使用 FastAPI lifespan `asyncio` 后台任务；Celery 引入时点延至 3.6/3.9 前决策。
+- OQ-6：WebSocket 认证采用 Ticket 方案（见上文）。
+- OQ-7：3.4 起计划任务编号统一为 `模块-序号` 前缀；3.1/3.2/3.3 历史编号不回改。
 
 ### 5.4 联动预案
 

@@ -22,6 +22,8 @@ from sqlalchemy.orm import selectinload
 
 from app.models.alarm import Alarm
 from app.models.device import Device, DeviceStatusLog
+from app.models.user import User
+from app.services.user_service import apply_data_scope
 
 # 尚未落地对应模块的数据源（模块上线后逐个移除并补查询分支）
 PENDING_SOURCES: dict[str, str] = {
@@ -128,13 +130,13 @@ async def _alarm_items(db: AsyncSession, device_id: int, limit: int) -> list[dic
 
 
 async def get_device_history(
-    db: AsyncSession, device_id: int, *, limit: int = 100
+    db: AsyncSession, device_id: int, *, user: User, limit: int = 100
 ) -> dict[str, Any] | None:
-    """按时间倒序返回设备历史。设备不存在或已逻辑删除时返回 None。"""
-    device = (
-        await db.execute(select(Device).where(Device.id == device_id))
-    ).scalar_one_or_none()
-    if device is None or device.is_deleted:
+    """按时间倒序返回设备历史。设备不存在、已逻辑删除或超出数据范围时返回 None。"""
+    base = select(Device).where(Device.id == device_id, Device.is_deleted.is_(False))
+    scoped = await apply_data_scope(base, user, db)
+    device = (await db.execute(scoped)).scalar_one_or_none()
+    if device is None:
         return None
 
     # 3.4/3.7 未建库，仅状态与报警两类可聚合；区间内各取 limit 条后再合并截断，
@@ -197,6 +199,7 @@ async def get_device_trajectory(
     db: AsyncSession,
     device_id: int,
     *,
+    user: User,
     start: datetime,
     end: datetime,
     page: int = 1,
@@ -205,12 +208,12 @@ async def get_device_trajectory(
     """
     单设备状态变化轨迹，按时间**升序**返回（供折线/甘特直接绘制）。
 
-    设备不存在或已逻辑删除返回 None。
+    设备不存在、已逻辑删除或超出数据范围返回 None。
     """
-    device = (
-        await db.execute(select(Device).where(Device.id == device_id))
-    ).scalar_one_or_none()
-    if device is None or device.is_deleted:
+    base = select(Device).where(Device.id == device_id, Device.is_deleted.is_(False))
+    scoped = await apply_data_scope(base, user, db)
+    device = (await db.execute(scoped)).scalar_one_or_none()
+    if device is None:
         return None
 
     conditions = [

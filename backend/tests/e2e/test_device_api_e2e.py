@@ -300,13 +300,8 @@ def test_self_scope_hides_others_devices(maint, device):
     assert total_of(maint, device["device_code"]) == 0
 
 
-@pytest.mark.xfail(
-    reason="已知缺口：详情/历史/更新按 ID 取记录时未叠加数据范围，"
-           "self/dept 用户可直接用 ID 读到越权数据（见待办 P1-007）",
-    strict=False,
-)
 def test_detail_should_respect_data_scope(maint, device):
-    """期望行为：超出自身数据范围的设备按 ID 也不可读"""
+    """超出自身数据范围的设备按 ID 不可读（P1-007）"""
     assert maint.get(f"/devices/{device['id']}").status_code == 404
 
 

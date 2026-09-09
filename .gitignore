@@ -3,8 +3,12 @@
 .env.*
 !.env.example
 
-# Claude 会话与进度记录
-.claude/
+# Claude 会话与进度记录（ADR 与索引除外）
+.claude/*
+!.claude/decisions.md
+!.claude/sessions/
+.claude/sessions/*
+!.claude/sessions/index.md
 
 # Python
 __pycache__/

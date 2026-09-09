@@ -8,6 +8,7 @@ from app.api.v1 import (
     alarms,
     auth,
     devices,
+    login_logs,
     monitor,
     organizations,
     permissions,
@@ -28,6 +29,9 @@ router.include_router(permissions.router, prefix="/permissions", tags=["权限"]
 
 # 注册角色路由
 router.include_router(roles.router, prefix="/roles", tags=["角色"])
+
+# 注册登录日志路由（P1-003：审计查询）
+router.include_router(login_logs.router, prefix="/login-logs", tags=["登录日志"])
 
 # 注册组织架构路由（3.2 区域选择器前置依赖）
 router.include_router(organizations.router, prefix="/organizations", tags=["组织架构"])
