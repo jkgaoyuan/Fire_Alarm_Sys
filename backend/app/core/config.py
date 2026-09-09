@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     MAP_IMAGE_JPEG_QUALITY: int = 80
     MAX_UPLOAD_SIZE_MB: int = 10
 
+    # 部署（P2-008 多 worker）
+    WORKERS: int = 1  # >1 时 entrypoint 以多进程启动，每个 worker 独立消费 Redis Stream
+
     # CORS 配置（开发环境）
     CORS_ORIGINS: list[str] = ["http://localhost:5173"]
 

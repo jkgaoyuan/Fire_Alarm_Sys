@@ -1,12 +1,13 @@
 """
-Stream → 本进程连接的扇出消费者（3.3 B-14）
+Stream → 本进程连接的扇出消费者（3.3 B-14，P2-008 多 worker 修正）
 
-每进程一个消费者（consumer name 含 hostname+pid+随机后缀），读到的是全量消息，
-再按各连接的数据权限在进程内扇出。这样多 worker 部署时每个 worker 都能推自己
-持有的连接，等价于 PRD 9 的 Redis Pub/Sub 广播，且天然可补发。
+每个 worker 进程使用独立的消费者组（组名含 PID），这样 Redis 会把全量消息
+投递给每一个 worker，各 worker 再按连接的数据权限在进程内扇出。
+原先所有 worker 共用同一组名会导致每条消息只被一个 worker 消费，其余 worker
+的连接收不到推送。
 
-消费者任务在首个 WebSocket 握手时惰性启动：lifespan 阶段还没有 Redis 依赖注入
-覆盖（测试环境），握手时启动可以让生产与测试走同一条路径。
+消费者任务在应用 lifespan 中 eager 启动（不再延迟到首次 WS 握手），
+确保多 worker 部署时每个进程从启动就开始消费。
 """
 
 import asyncio
@@ -26,6 +27,11 @@ _task: asyncio.Task | None = None
 _lock = asyncio.Lock()
 
 
+def group_name() -> str:
+    """每进程独立的消费者组名，保证多 worker 下每个进程都收到全量消息。"""
+    return f"{settings.WS_STREAM_GROUP}-{socket.gethostname()}-{os.getpid()}"
+
+
 def consumer_name() -> str:
     return f"{socket.gethostname()}-{os.getpid()}-{uuid.uuid4().hex[:8]}"
 
@@ -33,24 +39,25 @@ def consumer_name() -> str:
 async def ensure_running(redis: aioredis.Redis) -> None:
     """
     幂等启动扇出消费者；进程内只会存在一个任务。
-
-    消费者组以 `$` 为起始游标，因此建组必须在本函数返回前同步完成：
-    否则「握手成功 → 后台任务被调度 → 建组」之间写入的事件会被游标跳过，
-    客户端连上却收不到任何推送。
+    lifespan 阶段 eager 调用，WS 握手时也可能调用（兼容测试环境）。
     """
     global _task
-    await event_stream.ensure_group(redis, settings.WS_STREAM_GROUP)
+    await event_stream.ensure_group(redis, group_name())
     async with _lock:
         if _task is not None and not _task.done():
             return
         _task = asyncio.create_task(run_broadcaster(redis), name="ws-broadcaster")
 
 
+def is_running() -> bool:
+    return _task is not None and not _task.done()
+
+
 async def run_broadcaster(redis: aioredis.Redis) -> None:
     """持续消费事件流并扇出。异常退出的连接由 ConnectionManager 自行摘除。"""
     try:
         async for frame in event_stream.consume(
-            redis, settings.WS_STREAM_GROUP, consumer_name()
+            redis, group_name(), consumer_name()
         ):
             await manager.broadcast(frame)
     except asyncio.CancelledError:

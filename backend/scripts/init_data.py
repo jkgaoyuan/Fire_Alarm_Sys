@@ -73,6 +73,7 @@ MENU_LEVEL2 = [
     {"perm_code": "system:user", "perm_name": "用户管理", "perm_type": "menu", "route_path": "/system/user", "component": "views/system/User.vue", "icon": "User", "sort_order": 1, "parent_code": "system:management"},
     {"perm_code": "system:role", "perm_name": "角色管理", "perm_type": "menu", "route_path": "/system/role", "component": "views/system/Role.vue", "icon": "Role", "sort_order": 2, "parent_code": "system:management"},
     {"perm_code": "system:log", "perm_name": "登录日志", "perm_type": "menu", "route_path": "/system/login-log", "component": "views/system/LoginLog.vue", "icon": "Document", "sort_order": 3, "parent_code": "system:management"},
+    {"perm_code": "system:org", "perm_name": "组织管理", "perm_type": "menu", "route_path": "/system/org", "component": "views/system/Org.vue", "icon": "OfficeBuilding", "sort_order": 4, "parent_code": "system:management"},
 ]
 
 # 按钮/API 权限（parent_code 为关联的业务菜单）
@@ -117,6 +118,10 @@ BUTTON_PERMS = [
     {"perm_code": "system:role:delete", "perm_name": "删除角色", "perm_type": "button", "parent_code": "system:role"},
     # 登录日志
     {"perm_code": "system:log:view", "perm_name": "查看登录日志", "perm_type": "button", "parent_code": "system:log"},
+    # 组织管理（P2-010）
+    {"perm_code": "system:org:create", "perm_name": "新增组织", "perm_type": "button", "parent_code": "system:org"},
+    {"perm_code": "system:org:update", "perm_name": "编辑组织", "perm_type": "button", "parent_code": "system:org"},
+    {"perm_code": "system:org:delete", "perm_name": "删除组织", "perm_type": "button", "parent_code": "system:org"},
 ]
 
 # 角色权限映射

@@ -2,7 +2,28 @@
 组织架构相关 Pydantic Schema
 """
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+
+VALID_ORG_TYPES = ("building", "floor", "zone")
+
+
+class OrganizationCreate(BaseModel):
+    """创建组织节点"""
+
+    org_name: str = Field(..., min_length=1, max_length=100)
+    org_type: str = Field(..., pattern="^(building|floor|zone)$")
+    parent_id: int | None = None
+    sort_order: int = 0
+
+
+class OrganizationUpdate(BaseModel):
+    """更新组织节点（部分更新）"""
+
+    org_name: str | None = Field(None, min_length=1, max_length=100)
+    org_type: str | None = Field(None, pattern="^(building|floor|zone)$")
+    parent_id: int | None = None
+    sort_order: int | None = None
 
 
 class OrganizationFlatOut(BaseModel):

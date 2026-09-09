@@ -14,7 +14,7 @@ from app.api.v1 import router as api_v1_router
 from app.api.ws_devices import router as ws_router
 from app.core.config import get_settings
 from app.core.exceptions import AuthError, NotFoundError
-from app.db.redis import close_redis_pool
+from app.db.redis import close_redis_pool, get_redis_pool
 from app.services import ws_broadcaster
 from app.services.map_image_service import map_image_dir
 from app.tasks import offline_monitor
@@ -29,6 +29,13 @@ async def lifespan(app: FastAPI):
     # 启动时执行
     print(f"[START] {settings.APP_NAME} v{settings.APP_VERSION} started")
     offline_monitor.start()
+    # P2-008：eager 启动 WS 扇出消费者，确保多 worker 下每个进程都消费全量消息
+    try:
+        redis = await get_redis_pool()
+        await ws_broadcaster.ensure_running(redis)
+        print(f"[START] ws broadcaster started (group={ws_broadcaster.group_name()})")
+    except Exception as exc:
+        print(f"[WARN] ws broadcaster failed to start: {exc}")
     yield
     # 关闭时执行：先停推送扇出与心跳，再释放连接与 Redis
     await offline_monitor.stop()
@@ -92,4 +99,9 @@ async def not_found_error_handler(request: Request, exc: NotFoundError):
 @app.get("/health", tags=["健康检查"])
 async def health_check():
     """健康检查接口"""
-    return {"status": "ok", "version": settings.APP_VERSION}
+    return {
+        "status": "ok",
+        "version": settings.APP_VERSION,
+        "ws_connections": manager.count,
+        "ws_broadcaster": "running" if ws_broadcaster.is_running() else "stopped",
+    }

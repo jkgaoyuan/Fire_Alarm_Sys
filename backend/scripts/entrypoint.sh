@@ -65,4 +65,10 @@ echo "[*] 运行数据库初始化..."
 $PYTHON scripts/init_data.py
 
 echo "[*] 启动 uvicorn..."
-exec uvicorn app.main:app --host 0.0.0.0 --port 8000 "$@"
+WORKERS="${WORKERS:-1}"
+if [ "$WORKERS" -gt 1 ]; then
+    echo "[*] 多 worker 模式: WORKERS=$WORKERS"
+    exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers "$WORKERS"
+else
+    exec uvicorn app.main:app --host 0.0.0.0 --port 8000 "$@"
+fi

@@ -52,9 +52,11 @@ services:
       DB_PORT: 5432
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      WORKERS: "${WORKERS:-1}"
     volumes:
       - ./backend:/app
       - /app/__pycache__
+      - backend_storage:/app/storage
     ports:
       - "8000:8000"
     depends_on:
@@ -82,6 +84,7 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  backend_storage:
 
 networks:
   fire_alarm_net:

@@ -5,9 +5,10 @@
 且自关联在 async 下会触发懒加载）。
 """
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import AuthError
 from app.models.organization import Organization
 
 
@@ -57,3 +58,91 @@ async def get_organization_tree(db: AsyncSession) -> list[dict]:
     """返回完整组织架构树"""
     orgs = await get_organizations_flat(db)
     return build_org_tree(orgs)
+
+
+async def create_organization(
+    db: AsyncSession,
+    *,
+    org_name: str,
+    org_type: str,
+    parent_id: int | None = None,
+    sort_order: int = 0,
+) -> Organization:
+    """创建组织节点；parent_id 非空时校验父节点存在"""
+    if parent_id is not None:
+        parent = await db.get(Organization, parent_id)
+        if parent is None:
+            raise AuthError(400, "父节点不存在")
+
+    org = Organization(
+        org_name=org_name,
+        org_type=org_type,
+        parent_id=parent_id,
+        sort_order=sort_order,
+    )
+    db.add(org)
+    await db.commit()
+    await db.refresh(org)
+    return org
+
+
+async def update_organization(
+    db: AsyncSession,
+    org: Organization,
+    *,
+    org_name: str | None = None,
+    org_type: str | None = None,
+    parent_id: int | None = None,
+    sort_order: int | None = None,
+) -> Organization:
+    """部分更新组织节点"""
+    if parent_id is not None and parent_id != org.parent_id:
+        if parent_id == org.id:
+            raise AuthError(400, "不能将节点设为自己的子节点")
+        parent = await db.get(Organization, parent_id)
+        if parent is None:
+            raise AuthError(400, "父节点不存在")
+
+    if org_name is not None:
+        org.org_name = org_name
+    if org_type is not None:
+        org.org_type = org_type
+    if parent_id is not None:
+        org.parent_id = parent_id
+    if sort_order is not None:
+        org.sort_order = sort_order
+
+    db.add(org)
+    await db.commit()
+    await db.refresh(org)
+    return org
+
+
+async def delete_organization(db: AsyncSession, org: Organization) -> None:
+    """
+    删除组织节点。
+    有子节点或被设备/用户引用时拒绝删除，防止数据悬挂。
+    """
+    child_count = await db.execute(
+        select(func.count()).select_from(Organization).where(Organization.parent_id == org.id)
+    )
+    if child_count.scalar() > 0:
+        raise AuthError(400, "该节点下有子节点，请先删除子节点")
+
+    from app.models.device import Device
+    from app.models.user import User
+
+    device_count = await db.execute(
+        select(func.count()).select_from(Device).where(Device.org_id == org.id)
+    )
+    if device_count.scalar() > 0:
+        raise AuthError(400, "该节点下有关联设备，无法删除")
+
+    user_count = await db.execute(
+        select(func.count()).select_from(User).where(User.org_id == org.id)
+    )
+    if user_count.scalar() > 0:
+        raise AuthError(400, "该节点下有关联用户，无法删除")
+
+    await db.delete(org)
+    await db.commit()
