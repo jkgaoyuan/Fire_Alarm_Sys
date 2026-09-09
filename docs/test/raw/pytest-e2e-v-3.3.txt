@@ -1,0 +1,73 @@
+============================= test session starts =============================
+platform win32 -- Python 3.10.10, pytest-8.1.1, pluggy-1.6.0 -- C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\python.exe
+rootdir: E:\pycharm\AI_PROJECT_CODE\Fire_Alarm_Sys\backend
+configfile: pytest.ini
+plugins: anyio-4.14.1, asyncio-0.23.8, cov-7.1.0, md-report-0.6.2, order-1.2.0
+asyncio: mode=auto
+collecting ... collected 48 items
+
+tests/e2e/test_device_api_e2e.py::test_seeded_device_types_exposed PASSED
+tests/e2e/test_device_api_e2e.py::test_device_type_detail PASSED
+tests/e2e/test_device_api_e2e.py::test_organization_tree_available PASSED
+tests/e2e/test_device_api_e2e.py::test_create_device_roundtrip PASSED
+tests/e2e/test_device_api_e2e.py::test_duplicate_device_code_rejected PASSED
+tests/e2e/test_device_api_e2e.py::test_attribute_enum_violation_reports_options PASSED
+tests/e2e/test_device_api_e2e.py::test_unknown_attribute_key_rejected PASSED
+tests/e2e/test_device_api_e2e.py::test_combined_filters_and_pagination PASSED
+tests/e2e/test_device_api_e2e.py::test_retire_is_terminal_and_hidden_by_default PASSED
+tests/e2e/test_device_api_e2e.py::test_history_timeline PASSED
+tests/e2e/test_device_api_e2e.py::test_update_device_persists PASSED
+tests/e2e/test_device_api_e2e.py::test_status_field_rejects_retired_on_update PASSED
+tests/e2e/test_device_api_e2e.py::test_soft_deleted_device_code_remains_reserved PASSED
+tests/e2e/test_device_api_e2e.py::test_request_without_token_rejected PASSED
+tests/e2e/test_device_api_e2e.py::test_readonly_role_can_read_everything PASSED
+tests/e2e/test_device_api_e2e.py::test_write_operations_forbidden_for_readonly_roles[POST-/devices/{id}/retire-body0-duty] PASSED
+tests/e2e/test_device_api_e2e.py::test_write_operations_forbidden_for_readonly_roles[POST-/devices/{id}/retire-body0-maint] PASSED
+tests/e2e/test_device_api_e2e.py::test_write_operations_forbidden_for_readonly_roles[PUT-/devices/{id}-body1-duty] PASSED
+tests/e2e/test_device_api_e2e.py::test_write_operations_forbidden_for_readonly_roles[PUT-/devices/{id}-body1-maint] PASSED
+tests/e2e/test_device_api_e2e.py::test_write_operations_forbidden_for_readonly_roles[DELETE-/devices/{id}-None-duty] PASSED
+tests/e2e/test_device_api_e2e.py::test_write_operations_forbidden_for_readonly_roles[DELETE-/devices/{id}-None-maint] PASSED
+tests/e2e/test_device_api_e2e.py::test_write_operations_forbidden_for_readonly_roles[GET-/devices/import/template-None-duty] PASSED
+tests/e2e/test_device_api_e2e.py::test_write_operations_forbidden_for_readonly_roles[GET-/devices/import/template-None-maint] PASSED
+tests/e2e/test_device_api_e2e.py::test_import_forbidden_without_create_permission PASSED
+tests/e2e/test_device_api_e2e.py::test_self_scope_hides_others_devices PASSED
+tests/e2e/test_device_api_e2e.py::test_detail_should_respect_data_scope XFAIL
+tests/e2e/test_device_api_e2e.py::test_import_template_is_valid_workbook PASSED
+tests/e2e/test_device_api_e2e.py::test_import_all_valid_rows PASSED
+tests/e2e/test_device_api_e2e.py::test_import_partial_failure_keeps_valid_rows PASSED
+tests/e2e/test_device_api_e2e.py::test_import_rolls_back_when_failure_rate_exceeds_threshold PASSED
+tests/e2e/test_device_api_e2e.py::test_import_duplicate_code_in_file_and_db PASSED
+tests/e2e/test_device_api_e2e.py::test_import_rejects_bad_files PASSED
+tests/e2e/test_monitor_e2e.py::test_dashboard_counts_move_with_reports PASSED
+tests/e2e/test_monitor_e2e.py::test_recent_alarms_pin_pending_fire_and_hide_drill PASSED
+tests/e2e/test_monitor_e2e.py::test_ws_ticket_is_one_time_and_required PASSED
+tests/e2e/test_monitor_e2e.py::test_alarm_new_latency_within_budget 
+[latency] n=10 p50=0.081s p95=0.111s max=0.111s
+PASSED
+tests/e2e/test_monitor_e2e.py::test_handling_actions_broadcast_to_clients PASSED
+tests/e2e/test_monitor_e2e.py::test_reconnect_replays_missed_frames PASSED
+tests/e2e/test_monitor_e2e.py::test_reset_requires_explicit_physical_evidence PASSED
+tests/e2e/test_monitor_e2e.py::test_reports_require_device_key_and_reject_retired PASSED
+tests/e2e/test_monitor_e2e.py::test_map_image_lifecycle_and_static_access PASSED
+tests/e2e/test_monitor_e2e.py::test_map_image_rejects_non_image_and_unknown_org PASSED
+tests/e2e/test_monitor_e2e.py::test_map_devices_support_bbox_and_aggregation PASSED
+tests/e2e/test_monitor_e2e.py::test_map_points_light_up_with_active_alarm PASSED
+tests/e2e/test_monitor_e2e.py::test_trajectory_window_points_and_export PASSED
+tests/e2e/test_monitor_e2e.py::test_monitor_permission_matrix PASSED
+tests/e2e/test_monitor_e2e.py::test_duty_scope_cannot_reach_other_orgs PASSED
+tests/e2e/test_monitor_e2e.py::test_websocket_and_static_work_through_nginx PASSED
+
+============================== warnings summary ===============================
+C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\lib\site-packages\pydantic\_internal\_config.py:284
+C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\lib\site-packages\pydantic\_internal\_config.py:284
+C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\lib\site-packages\pydantic\_internal\_config.py:284
+C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\lib\site-packages\pydantic\_internal\_config.py:284
+C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\lib\site-packages\pydantic\_internal\_config.py:284
+C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\lib\site-packages\pydantic\_internal\_config.py:284
+C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\lib\site-packages\pydantic\_internal\_config.py:284
+C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\lib\site-packages\pydantic\_internal\_config.py:284
+  C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\lib\site-packages\pydantic\_internal\_config.py:284: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.7/migration/
+    warnings.warn(DEPRECATION_MESSAGE, DeprecationWarning)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================= 47 passed, 1 xfailed, 8 warnings in 17.30s ==================

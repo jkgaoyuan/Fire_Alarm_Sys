@@ -2,6 +2,7 @@
 pytest 全局 fixtures
 """
 
+import fakeredis
 import pytest_asyncio
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -24,44 +25,6 @@ TestingSessionLocal = async_sessionmaker(
 )
 
 
-class FakeRedis:
-    """内存 Redis 模拟（仅用于测试）"""
-
-    def __init__(self):
-        self._data: dict[str, str] = {}
-
-    async def set(self, key: str, value: str, ex: int | None = None) -> None:
-        self._data[key] = value
-
-    async def get(self, key: str) -> str | None:
-        return self._data.get(key)
-
-    async def exists(self, *keys: str) -> int:
-        return sum(1 for k in keys if k in self._data)
-
-    async def delete(self, *keys: str) -> int:
-        count = 0
-        for k in keys:
-            if k in self._data:
-                del self._data[k]
-                count += 1
-        return count
-
-    async def scan_iter(self, match: str | None = None):
-        for key in list(self._data.keys()):
-            if match is None:
-                yield key
-            elif match.endswith(":*"):
-                prefix = match[:-1]
-                if key.startswith(prefix):
-                    yield key
-            elif key == match:
-                yield key
-
-    async def close(self) -> None:
-        pass
-
-
 @pytest_asyncio.fixture
 async def db_engine():
     """每个测试函数独立的数据库引擎（自动建表/删表）"""
@@ -82,8 +45,17 @@ async def db_session(db_engine):
 
 @pytest_asyncio.fixture
 async def fake_redis():
-    """模拟 Redis"""
-    return FakeRedis()
+    """
+    内存 Redis（计划 10.1 前置）。
+
+    3.3 的推送与补发依赖 XADD/XRANGE/XREADGROUP/GETDEL 的真实命令语义，
+    手写桩无法覆盖，统一改用 fakeredis 的异步实现。
+    """
+    client = fakeredis.FakeAsyncRedis(decode_responses=True)
+    try:
+        yield client
+    finally:
+        await client.aclose()
 
 
 @pytest_asyncio.fixture

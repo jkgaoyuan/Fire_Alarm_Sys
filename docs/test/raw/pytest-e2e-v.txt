@@ -1,0 +1,63 @@
+============================= test session starts =============================
+platform win32 -- Python 3.10.10, pytest-8.1.1, pluggy-1.6.0 -- C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\python.exe
+rootdir: E:\pycharm\AI_PROJECT_CODE\Fire_Alarm_Sys\backend
+configfile: pytest.ini
+testpaths: tests
+plugins: anyio-4.14.1, asyncio-0.23.8, cov-7.1.0, md-report-0.6.2, order-1.2.0
+asyncio: mode=auto
+collecting ... collected 151 items / 119 deselected / 32 selected
+
+tests/e2e/test_device_api_e2e.py::test_seeded_device_types_exposed PASSED [  3%]
+tests/e2e/test_device_api_e2e.py::test_device_type_detail PASSED         [  6%]
+tests/e2e/test_device_api_e2e.py::test_organization_tree_available PASSED [  9%]
+tests/e2e/test_device_api_e2e.py::test_create_device_roundtrip PASSED    [ 12%]
+tests/e2e/test_device_api_e2e.py::test_duplicate_device_code_rejected PASSED [ 15%]
+tests/e2e/test_device_api_e2e.py::test_attribute_enum_violation_reports_options PASSED [ 18%]
+tests/e2e/test_device_api_e2e.py::test_unknown_attribute_key_rejected PASSED [ 21%]
+tests/e2e/test_device_api_e2e.py::test_combined_filters_and_pagination PASSED [ 25%]
+tests/e2e/test_device_api_e2e.py::test_retire_is_terminal_and_hidden_by_default PASSED [ 28%]
+tests/e2e/test_device_api_e2e.py::test_history_timeline PASSED           [ 31%]
+tests/e2e/test_device_api_e2e.py::test_update_device_persists PASSED     [ 34%]
+tests/e2e/test_device_api_e2e.py::test_status_field_rejects_retired_on_update PASSED [ 37%]
+tests/e2e/test_device_api_e2e.py::test_soft_deleted_device_code_remains_reserved PASSED [ 40%]
+tests/e2e/test_device_api_e2e.py::test_request_without_token_rejected PASSED [ 43%]
+tests/e2e/test_device_api_e2e.py::test_readonly_role_can_read_everything PASSED [ 46%]
+tests/e2e/test_device_api_e2e.py::test_write_operations_forbidden_for_readonly_roles[POST-/devices/{id}/retire-body0-duty] PASSED [ 50%]
+tests/e2e/test_device_api_e2e.py::test_write_operations_forbidden_for_readonly_roles[POST-/devices/{id}/retire-body0-maint] PASSED [ 53%]
+tests/e2e/test_device_api_e2e.py::test_write_operations_forbidden_for_readonly_roles[PUT-/devices/{id}-body1-duty] PASSED [ 56%]
+tests/e2e/test_device_api_e2e.py::test_write_operations_forbidden_for_readonly_roles[PUT-/devices/{id}-body1-maint] PASSED [ 59%]
+tests/e2e/test_device_api_e2e.py::test_write_operations_forbidden_for_readonly_roles[DELETE-/devices/{id}-None-duty] PASSED [ 62%]
+tests/e2e/test_device_api_e2e.py::test_write_operations_forbidden_for_readonly_roles[DELETE-/devices/{id}-None-maint] PASSED [ 65%]
+tests/e2e/test_device_api_e2e.py::test_write_operations_forbidden_for_readonly_roles[GET-/devices/import/template-None-duty] PASSED [ 68%]
+tests/e2e/test_device_api_e2e.py::test_write_operations_forbidden_for_readonly_roles[GET-/devices/import/template-None-maint] PASSED [ 71%]
+tests/e2e/test_device_api_e2e.py::test_import_forbidden_without_create_permission PASSED [ 75%]
+tests/e2e/test_device_api_e2e.py::test_self_scope_hides_others_devices PASSED [ 78%]
+tests/e2e/test_device_api_e2e.py::test_detail_should_respect_data_scope XFAIL [ 81%]
+tests/e2e/test_device_api_e2e.py::test_import_template_is_valid_workbook PASSED [ 84%]
+tests/e2e/test_device_api_e2e.py::test_import_all_valid_rows PASSED      [ 87%]
+tests/e2e/test_device_api_e2e.py::test_import_partial_failure_keeps_valid_rows PASSED [ 90%]
+tests/e2e/test_device_api_e2e.py::test_import_rolls_back_when_failure_rate_exceeds_threshold PASSED [ 93%]
+tests/e2e/test_device_api_e2e.py::test_import_duplicate_code_in_file_and_db PASSED [ 96%]
+tests/e2e/test_device_api_e2e.py::test_import_rejects_bad_files PASSED   [100%]
+
+============================== warnings summary ===============================
+C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\lib\site-packages\pydantic\_internal\_config.py:284
+C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\lib\site-packages\pydantic\_internal\_config.py:284
+C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\lib\site-packages\pydantic\_internal\_config.py:284
+C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\lib\site-packages\pydantic\_internal\_config.py:284
+C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\lib\site-packages\pydantic\_internal\_config.py:284
+C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\lib\site-packages\pydantic\_internal\_config.py:284
+C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\lib\site-packages\pydantic\_internal\_config.py:284
+  C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\lib\site-packages\pydantic\_internal\_config.py:284: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.7/migration/
+    warnings.warn(DEPRECATION_MESSAGE, DeprecationWarning)
+
+tests\test_crud_base.py:14
+  E:\pycharm\AI_PROJECT_CODE\Fire_Alarm_Sys\backend\tests\test_crud_base.py:14: PytestCollectionWarning: cannot collect test class 'TestItem' because it has a __init__ constructor (from: tests/test_crud_base.py)
+    class TestItem(Base):
+
+tests\test_data_scope.py:16
+  E:\pycharm\AI_PROJECT_CODE\Fire_Alarm_Sys\backend\tests\test_data_scope.py:16: PytestCollectionWarning: cannot collect test class 'TestDevice' because it has a __init__ constructor (from: tests/test_data_scope.py)
+    class TestDevice(Base):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+========== 31 passed, 119 deselected, 1 xfailed, 9 warnings in 6.62s ==========

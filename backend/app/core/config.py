@@ -39,6 +39,26 @@ class Settings(BaseSettings):
     MAX_LOGIN_FAILS: int = 5
     LOCK_DURATION_MINUTES: int = 30
 
+    # 实时监控与报警（3.3）
+    OFFLINE_THRESHOLD_SECONDS: int = 180  # 超过该时长未上报即判定 offline
+    OFFLINE_SCAN_INTERVAL_SECONDS: int = 60
+    OFFLINE_SCAN_ENABLED: bool = True  # 关闭后仅按需手动调用 scan_once()
+    ALLOW_DEVICE_REPORT: bool = False  # 设备上报端点开关，生产默认关闭
+    DEVICE_REPORT_KEY: str = ""  # X-Device-Key 预共享凭据
+    WS_STREAM_KEY: str = "ws:devices:stream"
+    WS_STREAM_MAXLEN: int = 100000
+    WS_STREAM_GROUP: str = "ws-fanout"
+    WS_TICKET_TTL_SECONDS: int = 60
+    WS_HEARTBEAT_SECONDS: int = 30  # PRD FR-013 心跳间隔
+    WS_REPLAY_LIMIT: int = 500  # 补发条数上限，超出则要求前端全量刷新
+    ALARM_DEDUP_WINDOW_SECONDS: int = 0  # 0 表示按「同设备同类型未收敛」去重，不限时窗
+
+    # 平面图与文件存储（3.3 FR-015，MinIO 接入前的本地卷方案）
+    STORAGE_DIR: str = "storage"
+    MAP_IMAGE_MAX_WIDTH: int = 2000  # 超宽等比压缩阈值
+    MAP_IMAGE_JPEG_QUALITY: int = 80
+    MAX_UPLOAD_SIZE_MB: int = 10
+
     # CORS 配置（开发环境）
     CORS_ORIGINS: list[str] = ["http://localhost:5173"]
 

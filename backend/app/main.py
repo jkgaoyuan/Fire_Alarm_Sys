@@ -8,11 +8,17 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api.v1 import router as api_v1_router
+from app.api.ws_devices import router as ws_router
 from app.core.config import get_settings
-from app.core.exceptions import AuthError
+from app.core.exceptions import AuthError, NotFoundError
 from app.db.redis import close_redis_pool
+from app.services import ws_broadcaster
+from app.services.map_image_service import map_image_dir
+from app.tasks import offline_monitor
+from app.ws.connection_manager import manager
 
 settings = get_settings()
 
@@ -22,8 +28,13 @@ async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     # 启动时执行
     print(f"[START] {settings.APP_NAME} v{settings.APP_VERSION} started")
+    offline_monitor.start()
     yield
-    # 关闭时执行
+    # 关闭时执行：先停推送扇出与心跳，再释放连接与 Redis
+    await offline_monitor.stop()
+    await ws_broadcaster.shutdown()
+    await manager.stop_heartbeat()
+    await manager.close_all()
     await close_redis_pool()
     print("[STOP] Application shutdown")
 
@@ -50,6 +61,12 @@ app.add_middleware(
 # 注册 API 路由
 app.include_router(api_v1_router, prefix="/api/v1")
 
+# WebSocket 路由不带 /api/v1 前缀（PRD FR-013 固定地址 /ws/devices）
+app.include_router(ws_router)
+
+# 平面图静态目录（计划 六.6：仅匿名读，图片不含敏感数据）
+app.mount("/static/maps", StaticFiles(directory=str(map_image_dir())), name="map-images")
+
 
 @app.exception_handler(AuthError)
 async def auth_error_handler(request: Request, exc: AuthError):
@@ -64,6 +81,12 @@ async def auth_error_handler(request: Request, exc: AuthError):
         status_code=status_code,
         content=exc.to_dict(),
     )
+
+
+@app.exception_handler(NotFoundError)
+async def not_found_error_handler(request: Request, exc: NotFoundError):
+    """业务 404：HTTP 保持 200，由统一响应体 code 表达（与 3.2 接口口径一致）"""
+    return JSONResponse(status_code=200, content=exc.to_dict())
 
 
 @app.get("/health", tags=["健康检查"])

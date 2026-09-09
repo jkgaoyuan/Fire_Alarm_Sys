@@ -1,0 +1,265 @@
+============================= test session starts =============================
+platform win32 -- Python 3.10.10, pytest-8.1.1, pluggy-1.6.0 -- C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\python.exe
+rootdir: E:\pycharm\AI_PROJECT_CODE\Fire_Alarm_Sys\backend
+configfile: pytest.ini
+testpaths: tests
+plugins: anyio-4.14.1, asyncio-0.23.8, cov-7.1.0, md-report-0.6.2, order-1.2.0
+asyncio: mode=auto
+collecting ... collected 207 items
+
+tests/e2e/test_device_api_e2e.py::test_seeded_device_types_exposed SKIPPED [  0%]
+tests/e2e/test_device_api_e2e.py::test_device_type_detail SKIPPED (...)  [  0%]
+tests/e2e/test_device_api_e2e.py::test_organization_tree_available SKIPPED [  1%]
+tests/e2e/test_device_api_e2e.py::test_create_device_roundtrip SKIPPED   [  1%]
+tests/e2e/test_device_api_e2e.py::test_duplicate_device_code_rejected SKIPPED [  2%]
+tests/e2e/test_device_api_e2e.py::test_attribute_enum_violation_reports_options SKIPPED [  2%]
+tests/e2e/test_device_api_e2e.py::test_unknown_attribute_key_rejected SKIPPED [  3%]
+tests/e2e/test_device_api_e2e.py::test_combined_filters_and_pagination SKIPPED [  3%]
+tests/e2e/test_device_api_e2e.py::test_retire_is_terminal_and_hidden_by_default SKIPPED [  4%]
+tests/e2e/test_device_api_e2e.py::test_history_timeline SKIPPED (未...)  [  4%]
+tests/e2e/test_device_api_e2e.py::test_update_device_persists SKIPPED    [  5%]
+tests/e2e/test_device_api_e2e.py::test_status_field_rejects_retired_on_update SKIPPED [  5%]
+tests/e2e/test_device_api_e2e.py::test_soft_deleted_device_code_remains_reserved SKIPPED [  6%]
+tests/e2e/test_device_api_e2e.py::test_request_without_token_rejected SKIPPED [  6%]
+tests/e2e/test_device_api_e2e.py::test_readonly_role_can_read_everything SKIPPED [  7%]
+tests/e2e/test_device_api_e2e.py::test_write_operations_forbidden_for_readonly_roles[POST-/devices/{id}/retire-body0-duty] SKIPPED [  7%]
+tests/e2e/test_device_api_e2e.py::test_write_operations_forbidden_for_readonly_roles[POST-/devices/{id}/retire-body0-maint] SKIPPED [  8%]
+tests/e2e/test_device_api_e2e.py::test_write_operations_forbidden_for_readonly_roles[PUT-/devices/{id}-body1-duty] SKIPPED [  8%]
+tests/e2e/test_device_api_e2e.py::test_write_operations_forbidden_for_readonly_roles[PUT-/devices/{id}-body1-maint] SKIPPED [  9%]
+tests/e2e/test_device_api_e2e.py::test_write_operations_forbidden_for_readonly_roles[DELETE-/devices/{id}-None-duty] SKIPPED [  9%]
+tests/e2e/test_device_api_e2e.py::test_write_operations_forbidden_for_readonly_roles[DELETE-/devices/{id}-None-maint] SKIPPED [ 10%]
+tests/e2e/test_device_api_e2e.py::test_write_operations_forbidden_for_readonly_roles[GET-/devices/import/template-None-duty] SKIPPED [ 10%]
+tests/e2e/test_device_api_e2e.py::test_write_operations_forbidden_for_readonly_roles[GET-/devices/import/template-None-maint] SKIPPED [ 11%]
+tests/e2e/test_device_api_e2e.py::test_import_forbidden_without_create_permission SKIPPED [ 11%]
+tests/e2e/test_device_api_e2e.py::test_self_scope_hides_others_devices SKIPPED [ 12%]
+tests/e2e/test_device_api_e2e.py::test_detail_should_respect_data_scope SKIPPED [ 12%]
+tests/e2e/test_device_api_e2e.py::test_import_template_is_valid_workbook SKIPPED [ 13%]
+tests/e2e/test_device_api_e2e.py::test_import_all_valid_rows SKIPPED     [ 13%]
+tests/e2e/test_device_api_e2e.py::test_import_partial_failure_keeps_valid_rows SKIPPED [ 14%]
+tests/e2e/test_device_api_e2e.py::test_import_rolls_back_when_failure_rate_exceeds_threshold SKIPPED [ 14%]
+tests/e2e/test_device_api_e2e.py::test_import_duplicate_code_in_file_and_db SKIPPED [ 14%]
+tests/e2e/test_device_api_e2e.py::test_import_rejects_bad_files SKIPPED  [ 15%]
+tests/e2e/test_monitor_e2e.py::test_dashboard_counts_move_with_reports SKIPPED [ 15%]
+tests/e2e/test_monitor_e2e.py::test_recent_alarms_pin_pending_fire_and_hide_drill SKIPPED [ 16%]
+tests/e2e/test_monitor_e2e.py::test_ws_ticket_is_one_time_and_required SKIPPED [ 16%]
+tests/e2e/test_monitor_e2e.py::test_alarm_new_latency_within_budget SKIPPED [ 17%]
+tests/e2e/test_monitor_e2e.py::test_handling_actions_broadcast_to_clients SKIPPED [ 17%]
+tests/e2e/test_monitor_e2e.py::test_reconnect_replays_missed_frames SKIPPED [ 18%]
+tests/e2e/test_monitor_e2e.py::test_reset_requires_explicit_physical_evidence SKIPPED [ 18%]
+tests/e2e/test_monitor_e2e.py::test_reports_require_device_key_and_reject_retired SKIPPED [ 19%]
+tests/e2e/test_monitor_e2e.py::test_map_image_lifecycle_and_static_access SKIPPED [ 19%]
+tests/e2e/test_monitor_e2e.py::test_map_image_rejects_non_image_and_unknown_org SKIPPED [ 20%]
+tests/e2e/test_monitor_e2e.py::test_map_devices_support_bbox_and_aggregation SKIPPED [ 20%]
+tests/e2e/test_monitor_e2e.py::test_map_points_light_up_with_active_alarm SKIPPED [ 21%]
+tests/e2e/test_monitor_e2e.py::test_trajectory_window_points_and_export SKIPPED [ 21%]
+tests/e2e/test_monitor_e2e.py::test_monitor_permission_matrix SKIPPED    [ 22%]
+tests/e2e/test_monitor_e2e.py::test_duty_scope_cannot_reach_other_orgs SKIPPED [ 22%]
+tests/e2e/test_monitor_e2e.py::test_websocket_and_static_work_through_nginx SKIPPED [ 23%]
+tests/test_alarm_crud.py::test_raise_alarm_snapshots_device_and_org PASSED [ 23%]
+tests/test_alarm_crud.py::test_raise_alarm_dedupes_open_alarm PASSED     [ 24%]
+tests/test_alarm_crud.py::test_confirm_alarm_transitions PASSED          [ 24%]
+tests/test_alarm_crud.py::test_false_alarm_requires_reason PASSED        [ 25%]
+tests/test_alarm_crud.py::test_list_alarms_filters_and_data_scope PASSED [ 25%]
+tests/test_alarm_silence_reset.py::test_reset_requires_explicit_physical_confirmation PASSED [ 26%]
+tests/test_alarm_silence_reset.py::test_reset_rejects_when_device_not_recovered PASSED [ 26%]
+tests/test_alarm_silence_reset.py::test_reset_rejects_retired_and_shield_device PASSED [ 27%]
+tests/test_alarm_silence_reset.py::test_reset_commits_alarm_device_and_audit_together PASSED [ 27%]
+tests/test_alarm_silence_reset.py::test_reset_is_idempotent PASSED       [ 28%]
+tests/test_alarm_silence_reset.py::test_silence_records_trace_without_changing_status PASSED [ 28%]
+tests/test_auth.py::test_login_success PASSED                            [ 28%]
+tests/test_auth.py::test_login_wrong_password_remaining_attempts PASSED  [ 29%]
+tests/test_auth.py::test_login_fifth_failure_locks_account PASSED        [ 29%]
+tests/test_auth.py::test_login_during_lock_rejected PASSED               [ 30%]
+tests/test_auth.py::test_refresh_token PASSED                            [ 30%]
+tests/test_auth.py::test_logout_blacklist PASSED                         [ 31%]
+tests/test_auth_service.py::test_parse_user_agent_desktop PASSED         [ 31%]
+tests/test_auth_service.py::test_parse_user_agent_mobile PASSED          [ 32%]
+tests/test_auth_service.py::test_parse_user_agent_none PASSED            [ 32%]
+tests/test_auth_service.py::test_is_account_locked_active PASSED         [ 33%]
+tests/test_auth_service.py::test_is_account_locked_still_locked PASSED   [ 33%]
+tests/test_auth_service.py::test_is_account_locked_auto_unlock PASSED    [ 34%]
+tests/test_auth_service.py::test_create_token_pair PASSED                [ 34%]
+tests/test_auth_service.py::test_save_token_whitelist PASSED             [ 35%]
+tests/test_auth_service.py::test_authenticate_success PASSED             [ 35%]
+tests/test_auth_service.py::test_authenticate_wrong_password PASSED      [ 36%]
+tests/test_auth_service.py::test_authenticate_user_not_found PASSED      [ 36%]
+tests/test_auth_service.py::test_authenticate_disabled PASSED            [ 37%]
+tests/test_auth_service.py::test_authenticate_locked PASSED              [ 37%]
+tests/test_auth_service.py::test_login_user_success PASSED               [ 38%]
+tests/test_auth_service.py::test_login_user_wrong_password PASSED        [ 38%]
+tests/test_auth_service.py::test_login_user_locked PASSED                [ 39%]
+tests/test_auth_service.py::test_refresh_access_token_success PASSED     [ 39%]
+tests/test_auth_service.py::test_refresh_access_token_invalid_type PASSED [ 40%]
+tests/test_auth_service.py::test_refresh_access_token_not_in_whitelist PASSED [ 40%]
+tests/test_auth_service.py::test_logout_user PASSED                      [ 41%]
+tests/test_auth_service.py::test_record_login_log PASSED                 [ 41%]
+tests/test_crud_base.py::test_crud_get PASSED                            [ 42%]
+tests/test_crud_base.py::test_crud_get_not_found PASSED                  [ 42%]
+tests/test_crud_base.py::test_crud_get_multi PASSED                      [ 42%]
+tests/test_crud_base.py::test_crud_get_multi_skip PASSED                 [ 43%]
+tests/test_crud_base.py::test_crud_create PASSED                         [ 43%]
+tests/test_crud_base.py::test_crud_update_with_schema PASSED             [ 44%]
+tests/test_crud_base.py::test_crud_update_with_dict PASSED               [ 44%]
+tests/test_crud_base.py::test_crud_delete PASSED                         [ 45%]
+tests/test_crud_base.py::test_crud_delete_not_found PASSED               [ 45%]
+tests/test_data_scope.py::test_data_scope_all PASSED                     [ 46%]
+tests/test_data_scope.py::test_data_scope_dept PASSED                    [ 46%]
+tests/test_data_scope.py::test_data_scope_self PASSED                    [ 47%]
+tests/test_device_crud.py::test_create_device PASSED                     [ 47%]
+tests/test_device_crud.py::test_create_device_duplicate_code_rejected PASSED [ 48%]
+tests/test_device_crud.py::test_create_device_invalid_attributes_rejected PASSED [ 48%]
+tests/test_device_crud.py::test_create_device_unknown_type_rejected PASSED [ 49%]
+tests/test_device_crud.py::test_create_device_invalid_status_rejected PASSED [ 49%]
+tests/test_device_crud.py::test_get_device_detail_and_404 PASSED         [ 50%]
+tests/test_device_crud.py::test_update_device PASSED                     [ 50%]
+tests/test_device_crud.py::test_update_device_code_conflict PASSED       [ 51%]
+tests/test_device_crud.py::test_update_device_rejects_retired_via_put PASSED [ 51%]
+tests/test_device_crud.py::test_retire_device_flow PASSED                [ 52%]
+tests/test_device_crud.py::test_retire_writes_status_log PASSED          [ 52%]
+tests/test_device_crud.py::test_delete_device_is_soft_delete PASSED      [ 53%]
+tests/test_device_filter.py::test_keyword_matches_code_and_name PASSED   [ 53%]
+tests/test_device_filter.py::test_combined_filters PASSED                [ 54%]
+tests/test_device_filter.py::test_pagination_bounds PASSED               [ 54%]
+tests/test_device_filter.py::test_retired_hidden_by_default PASSED       [ 55%]
+tests/test_device_history.py::test_history_aggregates_status_changes PASSED [ 55%]
+tests/test_device_history.py::test_history_declares_unavailable_sources PASSED [ 56%]
+tests/test_device_history.py::test_history_merges_alarms PASSED          [ 56%]
+tests/test_device_history.py::test_history_empty_and_not_found PASSED    [ 57%]
+tests/test_device_import.py::test_download_template PASSED               [ 57%]
+tests/test_device_import.py::test_import_all_valid_rows PASSED           [ 57%]
+tests/test_device_import.py::test_import_writes_archive_status_log PASSED [ 58%]
+tests/test_device_import.py::test_import_duplicate_code PASSED           [ 58%]
+tests/test_device_import.py::test_import_unknown_org_and_type PASSED     [ 59%]
+tests/test_device_import.py::test_import_attribute_validation_detail PASSED [ 59%]
+tests/test_device_import.py::test_import_rolls_back_when_failure_rate_too_high PASSED [ 60%]
+tests/test_device_import.py::test_import_rejects_bad_file PASSED         [ 60%]
+tests/test_device_permission.py::test_data_scope_all_sees_everything PASSED [ 61%]
+tests/test_device_permission.py::test_data_scope_dept_limits_to_subtree PASSED [ 61%]
+tests/test_device_permission.py::test_data_scope_self_limits_to_creator PASSED [ 62%]
+tests/test_device_permission.py::test_missing_permission_rejected PASSED [ 62%]
+tests/test_device_permission.py::test_duty_officer_cannot_write PASSED   [ 63%]
+tests/test_device_report.py::test_report_updates_status_log_and_alarm PASSED [ 63%]
+tests/test_device_report.py::test_report_dedupes_same_open_alarm PASSED  [ 64%]
+tests/test_device_report.py::test_report_recovery_creates_no_alarm PASSED [ 64%]
+tests/test_device_report.py::test_report_rejects_unknown_and_retired PASSED [ 65%]
+tests/test_device_report.py::test_scan_offline_only_touches_reportable_devices PASSED [ 65%]
+tests/test_device_report.py::test_report_endpoint_switch_and_key PASSED  [ 66%]
+tests/test_device_type.py::test_preset_device_types_complete PASSED      [ 66%]
+tests/test_device_type.py::test_validate_attributes_tolerates_bad_schema PASSED [ 67%]
+tests/test_device_type.py::test_device_types_list_requires_only_login PASSED [ 67%]
+tests/test_device_type.py::test_device_type_detail_and_404 PASSED        [ 68%]
+tests/test_map_image.py::test_wide_floor_plan_is_downscaled_and_basis_recorded PASSED [ 68%]
+tests/test_map_image.py::test_pdf_first_page_converted_to_png PASSED     [ 69%]
+tests/test_map_image.py::test_forged_mime_and_oversize_rejected PASSED   [ 69%]
+tests/test_map_image.py::test_upload_requires_config_permission PASSED   [ 70%]
+tests/test_map_image.py::test_delete_map_image_clears_basis_and_files PASSED [ 70%]
+tests/test_monitor_api.py::test_dashboard_status_scope_and_region_drill PASSED [ 71%]
+tests/test_monitor_api.py::test_recent_alarms_pins_unconfirmed_fire PASSED [ 71%]
+tests/test_monitor_api.py::test_map_devices_filters_by_viewport_and_scope PASSED [ 71%]
+tests/test_monitor_api.py::test_map_devices_aggregates_when_over_limit PASSED [ 72%]
+tests/test_organization.py::test_organizations_flat_list PASSED          [ 72%]
+tests/test_organization.py::test_organizations_tree_nesting_and_order PASSED [ 73%]
+tests/test_organization.py::test_organizations_tree_promotes_orphans PASSED [ 73%]
+tests/test_organization.py::test_organizations_require_login PASSED      [ 74%]
+tests/test_role.py::test_get_roles_pagination PASSED                     [ 74%]
+tests/test_role.py::test_get_roles_filter_by_role_code PASSED            [ 75%]
+tests/test_role.py::test_get_roles_filter_by_role_name PASSED            [ 75%]
+tests/test_role.py::test_create_role_with_permissions PASSED             [ 76%]
+tests/test_role.py::test_update_role_and_rebind_permissions PASSED       [ 76%]
+tests/test_role.py::test_delete_role_success PASSED                      [ 77%]
+tests/test_role.py::test_delete_builtin_role_forbidden PASSED            [ 77%]
+tests/test_role.py::test_delete_role_with_users_forbidden PASSED         [ 78%]
+tests/test_role.py::test_get_role_permissions_list PASSED                [ 78%]
+tests/test_role.py::test_role_api_permission_denied PASSED               [ 79%]
+tests/test_trajectory.py::test_trajectory_window_boundaries PASSED       [ 79%]
+tests/test_trajectory.py::test_trajectory_rejects_invalid_window PASSED  [ 80%]
+tests/test_trajectory.py::test_trajectory_export_matches_query PASSED    [ 80%]
+tests/test_user.py::test_get_me_success PASSED                           [ 81%]
+tests/test_user.py::test_get_me_unauthorized PASSED                      [ 81%]
+tests/test_user.py::test_get_my_menus PASSED                             [ 82%]
+tests/test_user.py::test_get_my_permissions PASSED                       [ 82%]
+tests/test_user.py::test_get_permissions_tree_forbidden PASSED           [ 83%]
+tests/test_user.py::test_get_permissions_tree_success PASSED             [ 83%]
+tests/test_user_management.py::test_get_users_list_success PASSED        [ 84%]
+tests/test_user_management.py::test_get_users_forbidden PASSED           [ 84%]
+tests/test_user_management.py::test_create_user_success PASSED           [ 85%]
+tests/test_user_management.py::test_create_user_duplicate_username PASSED [ 85%]
+tests/test_user_management.py::test_update_user_success PASSED           [ 85%]
+tests/test_user_management.py::test_update_user_not_found PASSED         [ 86%]
+tests/test_user_management.py::test_disable_and_enable_user PASSED       [ 86%]
+tests/test_user_management.py::test_unlock_user_clears_lock PASSED       [ 87%]
+tests/test_user_management.py::test_cannot_self_disable PASSED           [ 87%]
+tests/test_user_management.py::test_assign_roles_to_user PASSED          [ 88%]
+tests/test_user_management.py::test_reset_password_success PASSED        [ 88%]
+tests/test_user_management.py::test_delete_user_success PASSED           [ 89%]
+tests/test_user_management.py::test_cannot_self_delete PASSED            [ 89%]
+tests/test_user_management.py::test_get_all_roles PASSED                 [ 90%]
+tests/test_user_management.py::test_user_list_keyword_filter PASSED      [ 90%]
+tests/test_user_service.py::test_get_user_with_roles_success PASSED      [ 91%]
+tests/test_user_service.py::test_get_user_with_roles_not_found PASSED    [ 91%]
+tests/test_user_service.py::test_apply_data_scope_all PASSED             [ 92%]
+tests/test_user_service.py::test_apply_data_scope_self PASSED            [ 92%]
+tests/test_user_service.py::test_apply_data_scope_self_no_created_by_field PASSED [ 93%]
+tests/test_user_service.py::test_apply_data_scope_dept PASSED            [ 93%]
+tests/test_user_service.py::test_apply_data_scope_dept_no_org_id PASSED  [ 94%]
+tests/test_user_service.py::test_apply_data_scope_dept_no_org_id_field PASSED [ 94%]
+tests/test_user_service.py::test_apply_data_scope_unknown_scope PASSED   [ 95%]
+tests/test_ws_data_scope.py::test_dept_connection_only_receives_own_region PASSED [ 95%]
+tests/test_ws_data_scope.py::test_self_scope_degrades_to_region PASSED   [ 96%]
+tests/test_ws_data_scope.py::test_unrestricted_lookup_without_org_receives_no_scoped_event PASSED [ 96%]
+tests/test_ws_data_scope.py::test_out_of_region_alarm_is_silent_for_dept PASSED [ 97%]
+tests/test_ws_realtime.py::test_ws_ticket_is_one_time PASSED             [ 97%]
+tests/test_ws_realtime.py::test_handshake_rejects_invalid_ticket PASSED  [ 98%]
+tests/test_ws_realtime.py::test_report_events_fan_out_to_client PASSED   [ 98%]
+tests/test_ws_realtime.py::test_client_ping_and_server_heartbeat PASSED  [ 99%]
+tests/test_ws_realtime.py::test_reconnect_replays_missed_frames PASSED   [ 99%]
+tests/test_ws_realtime.py::test_replay_overflow_and_trimmed_breakpoint_require_resync PASSED [100%]
+
+============================== warnings summary ===============================
+C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\lib\site-packages\pydantic\_internal\_config.py:284
+C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\lib\site-packages\pydantic\_internal\_config.py:284
+C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\lib\site-packages\pydantic\_internal\_config.py:284
+C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\lib\site-packages\pydantic\_internal\_config.py:284
+C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\lib\site-packages\pydantic\_internal\_config.py:284
+C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\lib\site-packages\pydantic\_internal\_config.py:284
+C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\lib\site-packages\pydantic\_internal\_config.py:284
+C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\lib\site-packages\pydantic\_internal\_config.py:284
+  C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\lib\site-packages\pydantic\_internal\_config.py:284: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.7/migration/
+    warnings.warn(DEPRECATION_MESSAGE, DeprecationWarning)
+
+tests\test_crud_base.py:14
+  E:\pycharm\AI_PROJECT_CODE\Fire_Alarm_Sys\backend\tests\test_crud_base.py:14: PytestCollectionWarning: cannot collect test class 'TestItem' because it has a __init__ constructor (from: tests/test_crud_base.py)
+    class TestItem(Base):
+
+tests\test_data_scope.py:16
+  E:\pycharm\AI_PROJECT_CODE\Fire_Alarm_Sys\backend\tests\test_data_scope.py:16: PytestCollectionWarning: cannot collect test class 'TestDevice' because it has a __init__ constructor (from: tests/test_data_scope.py)
+    class TestDevice(Base):
+
+tests/test_auth.py: 6 warnings
+tests/test_auth_service.py: 15 warnings
+tests/test_crud_base.py: 9 warnings
+tests/test_data_scope.py: 3 warnings
+tests/test_device_crud.py: 12 warnings
+tests/test_device_filter.py: 4 warnings
+tests/test_device_history.py: 4 warnings
+tests/test_device_import.py: 8 warnings
+tests/test_device_permission.py: 5 warnings
+tests/test_device_report.py: 1 warning
+tests/test_device_type.py: 2 warnings
+tests/test_map_image.py: 5 warnings
+tests/test_monitor_api.py: 4 warnings
+tests/test_organization.py: 4 warnings
+tests/test_role.py: 10 warnings
+tests/test_trajectory.py: 3 warnings
+tests/test_user.py: 6 warnings
+tests/test_user_management.py: 15 warnings
+tests/test_user_service.py: 9 warnings
+  C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\lib\site-packages\httpx\_client.py:1426: DeprecationWarning: The 'app' shortcut is now deprecated. Use the explicit style 'transport=ASGITransport(app=...)' instead.
+    warnings.warn(message, DeprecationWarning)
+
+tests/test_auth.py::test_refresh_token
+  C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\lib\site-packages\httpx\_client.py:1559: DeprecationWarning: Setting per-request cookies=<...> is being deprecated, because the expected behaviour on cookie persistence is ambiguous. Set cookies directly on the client instance instead.
+    warnings.warn(message, DeprecationWarning)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=============== 159 passed, 48 skipped, 136 warnings in 47.65s ================

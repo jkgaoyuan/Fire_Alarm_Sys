@@ -2,7 +2,8 @@
 """
 数据库初始化脚本
 ---------------
-用途：在真实 PostgreSQL 环境中创建表并插入预置数据（角色、权限、菜单、测试用户）
+用途：在真实 PostgreSQL 环境中创建表并插入预置数据（角色、权限、菜单、设备类型、测试用户）
+脚本幂等，可重复执行：已存在的记录会被跳过，仅补齐缺失项（容器每次启动都会执行）
 
 运行方式：
     cd E:/pycharm/AI_PROJECT_CODE/Fire_Alarm_Sys/backend
@@ -19,11 +20,13 @@ from pathlib import Path
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BACKEND_DIR))
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 
 from app.core.config import get_settings
 from app.core.security import get_password_hash
 from app.models.base import Base
+from app.models.device_type import DeviceType
 from app.models.organization import Organization
 from app.models.permission import Permission
 from app.models.user import Role, User
@@ -76,8 +79,12 @@ BUTTON_PERMS = [
     # 监控大屏
     {"perm_code": "monitor:view",    "perm_name": "查看监控",     "perm_type": "button", "parent_code": "monitor:dashboard"},
     {"perm_code": "monitor:confirm", "perm_name": "确认监控告警", "perm_type": "button", "parent_code": "monitor:dashboard"},
+    {"perm_code": "monitor:config",  "perm_name": "配置平面图",   "perm_type": "button", "parent_code": "monitor:dashboard"},
     # 报警中心
+    {"perm_code": "alarm:view",    "perm_name": "查看报警", "perm_type": "button", "parent_code": "alarm:center"},
     {"perm_code": "alarm:confirm", "perm_name": "确认报警", "perm_type": "button", "parent_code": "alarm:center"},
+    {"perm_code": "alarm:silence", "perm_name": "报警消音", "perm_type": "button", "parent_code": "alarm:center"},
+    {"perm_code": "alarm:reset",   "perm_name": "系统复位", "perm_type": "button", "parent_code": "alarm:center"},
     {"perm_code": "alarm:handle",  "perm_name": "处置报警", "perm_type": "button", "parent_code": "alarm:center"},
     # 设备档案
     {"perm_code": "device:view",   "perm_name": "查看设备", "perm_type": "button", "parent_code": "device:archive"},
@@ -116,7 +123,7 @@ ROLE_PERM_MAP = {
         "monitor:dashboard", "alarm:center", "device:archive", "statistics:report",
         # 按钮
         "monitor:view", "monitor:confirm",
-        "alarm:confirm", "alarm:handle",
+        "alarm:view", "alarm:confirm", "alarm:silence", "alarm:reset", "alarm:handle",
         "device:view",
         "statistics:partial",
     ],
@@ -132,6 +139,90 @@ ROLE_PERM_MAP = {
         # 主管拥有全部权限（通过代码自动绑定所有权限）
     ],
 }
+
+# 预置 8 种设备类型（FR-007）
+# attribute_schema 采用计划 5.1 的简化格式，字段 type 仅用 string / number / select
+# （计划第八节降险策略：复杂类型延期至 P1）
+DEVICE_TYPES_DATA = [
+    {
+        "type_code": "smoke_detector",
+        "type_name": "烟感探测器",
+        "category": "detector",
+        "attribute_schema": {
+            "sensitivity": {"label": "灵敏度", "type": "select", "options": ["高", "中", "低"]},
+            "detection_area": {"label": "探测面积", "type": "number", "unit": "㎡"},
+            "working_voltage": {"label": "工作电压", "type": "string", "unit": "V"},
+        },
+    },
+    {
+        "type_code": "heat_detector",
+        "type_name": "温感探测器",
+        "category": "detector",
+        "attribute_schema": {
+            "alarm_temp": {"label": "报警温度", "type": "number", "unit": "℃"},
+            "response_type": {"label": "响应类型", "type": "select", "options": ["定温", "差温", "差定温"]},
+        },
+    },
+    {
+        "type_code": "manual_alarm",
+        "type_name": "手动报警按钮",
+        "category": "alarm",
+        "attribute_schema": {
+            "with_phone_jack": {"label": "电话插孔", "type": "select", "options": ["有", "无"]},
+            "material": {"label": "面板材质", "type": "string"},
+        },
+    },
+    {
+        "type_code": "hydrant",
+        "type_name": "消火栓",
+        "category": "extinguishing",
+        "attribute_schema": {
+            "outlet_count": {"label": "出水口数量", "type": "number", "unit": "个"},
+            "design_flow": {"label": "设计流量", "type": "number", "unit": "L/s"},
+            "has_nozzle": {"label": "是否配水枪", "type": "select", "options": ["是", "否"]},
+        },
+    },
+    {
+        "type_code": "sprinkler",
+        "type_name": "喷淋头",
+        "category": "extinguishing",
+        "attribute_schema": {
+            "k_value": {"label": "流量系数 K", "type": "number"},
+            "action_temp": {"label": "动作温度", "type": "number", "unit": "℃"},
+            "spray_type": {"label": "喷洒方式", "type": "select", "options": ["直立", "下垂", "边墙"]},
+        },
+    },
+    {
+        "type_code": "exhaust_fan",
+        "type_name": "排烟风机",
+        "category": "exhaust",
+        "attribute_schema": {
+            "power": {"label": "功率", "type": "number", "unit": "kW"},
+            "air_volume": {"label": "风量", "type": "number", "unit": "m³/h"},
+            "noise": {"label": "噪声", "type": "number", "unit": "dB"},
+        },
+    },
+    {
+        "type_code": "fire_door",
+        "type_name": "防火门",
+        "category": "door",
+        "attribute_schema": {
+            "fire_rating": {"label": "耐火等级", "type": "select", "options": ["甲级", "乙级", "丙级"]},
+            "open_direction": {"label": "开启方向", "type": "select", "options": ["左开", "右开", "双开"]},
+            "door_width": {"label": "门洞宽度", "type": "number", "unit": "mm"},
+        },
+    },
+    {
+        "type_code": "emergency_light",
+        "type_name": "应急照明",
+        "category": "lighting",
+        "attribute_schema": {
+            "battery_duration": {"label": "持续供电时间", "type": "number", "unit": "min"},
+            "luminous_flux": {"label": "光通量", "type": "number", "unit": "lm"},
+            "charge_type": {"label": "供电方式", "type": "select", "options": ["集中", "独立"]},
+        },
+    },
+]
 
 # 测试用户
 USERS_DATA = [
@@ -162,6 +253,18 @@ USERS_DATA = [
 ]
 
 
+async def get_or_create(session, model, defaults=None, **filters):
+    """按唯一键复用已有记录，仅在缺失时插入，返回 (实例, 是否新建)"""
+    stmt = select(model).filter_by(**filters)
+    obj = (await session.execute(stmt)).scalar_one_or_none()
+    if obj is not None:
+        return obj, False
+    obj = model(**{**filters, **(defaults or {})})
+    session.add(obj)
+    await session.flush()
+    return obj, True
+
+
 async def init_database():
     """初始化数据库：建表 + 插入预置数据"""
     async with engine.begin() as conn:
@@ -171,89 +274,119 @@ async def init_database():
 
     async with AsyncSessionLocal() as session:
         # 1. 插入组织架构根节点
-        org = Organization(org_name="消防管理中心", org_type="building", sort_order=0)
-        session.add(org)
-        await session.flush()
+        org, created = await get_or_create(
+            session,
+            Organization,
+            defaults={"sort_order": 0},
+            org_name="消防管理中心",
+            org_type="building",
+        )
         org_id = org.id
-        print(f"[✓] 组织架构根节点创建完成: id={org_id}")
+        print(f"[✓] 组织架构根节点{'创建完成' if created else '已存在，跳过'}: id={org_id}")
 
         # 2. 插入角色
         role_map = {}  # role_code -> Role 对象
         for role_data in ROLES_DATA:
-            role = Role(**role_data)
-            session.add(role)
-            await session.flush()
+            role, created = await get_or_create(
+                session, Role, defaults=dict(role_data), role_code=role_data["role_code"]
+            )
             role_map[role.role_code] = role
-            print(f"[✓] 角色创建完成: {role.role_code} (id={role.id})")
+            print(f"[✓] 角色{'创建完成' if created else '已存在，跳过'}: {role.role_code} (id={role.id})")
 
         # 3. 插入一级菜单
         perm_map = {}  # perm_code -> Permission 对象
         for menu_data in MENU_LEVEL1:
-            perm = Permission(**menu_data)
-            session.add(perm)
-            await session.flush()
+            perm, created = await get_or_create(
+                session, Permission, defaults=dict(menu_data), perm_code=menu_data["perm_code"]
+            )
             perm_map[perm.perm_code] = perm
-            print(f"[✓] 一级菜单创建完成: {perm.perm_code} (id={perm.id})")
+            print(f"[✓] 一级菜单{'创建完成' if created else '已存在，跳过'}: {perm.perm_code}")
 
         # 4. 插入二级菜单
         for menu_data in MENU_LEVEL2:
-            parent_code = menu_data.pop("parent_code")
+            data = dict(menu_data)
+            parent_code = data.pop("parent_code")
             parent_perm = perm_map[parent_code]
-            perm = Permission(parent_id=parent_perm.id, **menu_data)
-            session.add(perm)
-            await session.flush()
+            perm, created = await get_or_create(
+                session,
+                Permission,
+                defaults={**data, "parent_id": parent_perm.id},
+                perm_code=data["perm_code"],
+            )
             perm_map[perm.perm_code] = perm
-            print(f"[✓] 二级菜单创建完成: {perm.perm_code} (id={perm.id}, parent={parent_perm.perm_code})")
+            print(f"[✓] 二级菜单{'创建完成' if created else '已存在，跳过'}: {perm.perm_code} (parent={parent_perm.perm_code})")
 
         # 5. 插入按钮/API 权限
         for btn_data in BUTTON_PERMS:
-            parent_code = btn_data.pop("parent_code")
+            data = dict(btn_data)
+            parent_code = data.pop("parent_code")
             parent_perm = perm_map[parent_code]
-            perm = Permission(parent_id=parent_perm.id, **btn_data)
-            session.add(perm)
-            await session.flush()
+            perm, created = await get_or_create(
+                session,
+                Permission,
+                defaults={**data, "parent_id": parent_perm.id},
+                perm_code=data["perm_code"],
+            )
             perm_map[perm.perm_code] = perm
-            print(f"[✓] 按钮权限创建完成: {perm.perm_code} (parent={parent_perm.perm_code})")
+            print(f"[✓] 按钮权限{'创建完成' if created else '已存在，跳过'}: {perm.perm_code} (parent={parent_perm.perm_code})")
 
         # 6. 绑定角色权限（先显式加载 relationship，避免 lazy load）
+        def bind_permissions(role, perms):
+            missing = [perm for perm in perms if perm not in role.permissions]
+            role.permissions.extend(missing)
+            return len(missing)
+
         # 消防主管绑定全部权限
         chief_role = role_map["chief"]
         await session.refresh(chief_role, attribute_names=["permissions"])
-        for perm in perm_map.values():
-            chief_role.permissions.append(perm)
-        print(f"[✓] 消防主管绑定全部权限: {len(perm_map)} 个")
+        added = bind_permissions(chief_role, list(perm_map.values()))
+        print(f"[✓] 消防主管权限绑定: 新增 {added} 个，共 {len(chief_role.permissions)} 个")
 
         # 消防值班员
         duty_role = role_map["duty_officer"]
         await session.refresh(duty_role, attribute_names=["permissions"])
-        for code in ROLE_PERM_MAP["duty_officer"]:
-            if code in perm_map:
-                duty_role.permissions.append(perm_map[code])
-        print(f"[✓] 消防值班员绑定权限: {len(duty_role.permissions)} 个")
+        added = bind_permissions(duty_role, [perm_map[c] for c in ROLE_PERM_MAP["duty_officer"] if c in perm_map])
+        print(f"[✓] 消防值班员权限绑定: 新增 {added} 个，共 {len(duty_role.permissions)} 个")
 
         # 维保人员
         maint_role = role_map["maintainer"]
         await session.refresh(maint_role, attribute_names=["permissions"])
-        for code in ROLE_PERM_MAP["maintainer"]:
-            if code in perm_map:
-                maint_role.permissions.append(perm_map[code])
-        print(f"[✓] 维保人员绑定权限: {len(maint_role.permissions)} 个")
+        added = bind_permissions(maint_role, [perm_map[c] for c in ROLE_PERM_MAP["maintainer"] if c in perm_map])
+        print(f"[✓] 维保人员权限绑定: 新增 {added} 个，共 {len(maint_role.permissions)} 个")
 
-        # 7. 插入测试用户
+        # 6.5 插入预置设备类型（幂等：已存在的 type_code 跳过，支持脚本重跑）
+        result = await session.execute(select(DeviceType.type_code))
+        existing_type_codes = {row[0] for row in result.all()}
+        created_types = 0
+        for type_data in DEVICE_TYPES_DATA:
+            if type_data["type_code"] in existing_type_codes:
+                continue
+            session.add(DeviceType(**type_data))
+            created_types += 1
+        await session.flush()
+        print(
+            f"[✓] 设备类型预置完成: 新增 {created_types} 种，"
+            f"跳过已存在 {len(DEVICE_TYPES_DATA) - created_types} 种"
+        )
+
+        # 7. 插入测试用户（已存在则只补齐角色绑定，不重置密码）
         for user_data in USERS_DATA:
-            role_codes = user_data.pop("role_codes")
-            password = user_data.pop("password")
-            user = User(
-                **user_data,
-                password_hash=get_password_hash(password),
-                org_id=org_id,
+            data = dict(user_data)
+            role_codes = data.pop("role_codes")
+            password = data.pop("password")
+            user, created = await get_or_create(
+                session,
+                User,
+                defaults={**data, "password_hash": get_password_hash(password), "org_id": org_id},
+                username=data["username"],
             )
-            session.add(user)
-            await session.flush()
             await session.refresh(user, attribute_names=["roles"])
-            for code in role_codes:
-                user.roles.append(role_map[code])
-            print(f"[✓] 用户创建完成: {user.username} (id={user.id}, 角色: {role_codes})")
+            missing_roles = [role_map[code] for code in role_codes if role_map[code] not in user.roles]
+            user.roles.extend(missing_roles)
+            print(
+                f"[✓] 用户{'创建完成' if created else '已存在，跳过'}: {user.username} "
+                f"(id={user.id}, 角色: {role_codes}, 新增绑定 {len(missing_roles)})"
+            )
 
         await session.commit()
         print("\n[✅] 数据库初始化完成！")

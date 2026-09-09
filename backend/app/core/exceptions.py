@@ -36,6 +36,18 @@ class PermissionDenied(AuthError):
         super().__init__(403, message, data)
 
 
+class NotFoundError(AuthError):
+    """
+    资源不存在。
+
+    HTTP 状态码保持 200，由统一响应体的 code 表达 404——与 3.2 各接口的
+    {"code": 404} 返回一致，前端拦截器只认 body.code。
+    """
+
+    def __init__(self, message: str = "资源不存在", data: dict | None = None):
+        super().__init__(404, message, data)
+
+
 class AccountLocked(AuthError):
     """账户已锁定"""
 

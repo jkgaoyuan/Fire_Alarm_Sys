@@ -58,3 +58,6 @@ Thumbs.db
 # Docker 数据卷
 docker-data/
 data/
+
+# 运行时上传文件（3.3 B-17 平面图本地卷）
+backend/storage/
