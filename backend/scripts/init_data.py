@@ -96,8 +96,12 @@ BUTTON_PERMS = [
     {"perm_code": "device:retire", "perm_name": "退役设备", "perm_type": "button", "parent_code": "device:archive"},
     {"perm_code": "device:repair", "perm_name": "维修记录", "perm_type": "button", "parent_code": "device:archive"},
     # 联动预案
-    {"perm_code": "linkage:config",  "perm_name": "配置预案", "perm_type": "button", "parent_code": "linkage:plan"},
-    {"perm_code": "linkage:execute", "perm_name": "执行联动", "perm_type": "button", "parent_code": "linkage:plan"},
+    {"perm_code": "linkage:view",      "perm_name": "查看预案",     "perm_type": "button", "parent_code": "linkage:plan"},
+    {"perm_code": "linkage:create",    "perm_name": "新增预案",     "perm_type": "button", "parent_code": "linkage:plan"},
+    {"perm_code": "linkage:update",    "perm_name": "编辑预案",     "perm_type": "button", "parent_code": "linkage:plan"},
+    {"perm_code": "linkage:delete",    "perm_name": "删除预案",     "perm_type": "button", "parent_code": "linkage:plan"},
+    {"perm_code": "linkage:execute",   "perm_name": "执行联动",     "perm_type": "button", "parent_code": "linkage:plan"},
+    {"perm_code": "linkage:simulate",  "perm_name": "模拟测试",     "perm_type": "button", "parent_code": "linkage:plan"},
     # 巡检任务
     {"perm_code": "inspection:record", "perm_name": "巡检记录", "perm_type": "button", "parent_code": "inspection:task"},
     {"perm_code": "inspection:plan",   "perm_name": "巡检计划", "perm_type": "button", "parent_code": "inspection:task"},
@@ -134,6 +138,8 @@ ROLE_PERM_MAP = {
         "alarm:view", "alarm:confirm", "alarm:silence", "alarm:reset", "alarm:handle",
         "device:view",
         "statistics:partial",
+        # 联动预案（值班员只能查看和执行）
+        "linkage:view", "linkage:execute",
     ],
     "maintainer": [
         # 菜单

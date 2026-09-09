@@ -9,6 +9,7 @@ XADD 放在 commit 之后，推送失败不回滚业务。
 """
 
 from datetime import datetime, timedelta, timezone
+import asyncio
 
 import redis.asyncio as aioredis
 from sqlalchemy import select
@@ -22,6 +23,7 @@ from app.models.alarm import ALARM_TYPE_PROFILE
 from app.models.device import DEVICE_STATUSES, Device
 from app.schemas.alarm import DeviceReportRequest
 from app.services import alarm_service
+from app.services.linkage_engine_service import linkage_engine
 from app.services.device_service import write_status_log
 
 REPORT_LOG_REASON = "设备上报"
@@ -120,6 +122,10 @@ async def handle_device_report(
 
     await db.commit()
 
+    # Trigger linkage engine for newly created alarms (3.4-B2)
+    if alarm is not None and alarm_created:
+        asyncio.create_task(linkage_engine.on_alarm_created(db, alarm))
+
     result = {
         "device_id": device.id,
         "device_code": device.device_code,
@@ -198,6 +204,8 @@ async def scan_offline_devices(
 
     await db.commit()
 
+    # Trigger linkage engine for offline fault alarms (3.4-B2)
+    # Note: fault alarms don't trigger auto-linkage per plan 3.4-B2
     for item in results:
         reloaded = await device_crud.get_with_relations(db, item["device_id"])
         await alarm_service.publish(

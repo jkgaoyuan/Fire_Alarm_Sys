@@ -20,4 +20,16 @@ export const staticRoutes = [
     hidden: true,
     meta: { title: '页面不存在' },
   },
+  {
+    path: '/linkage',
+    name: 'LinkagePlan',
+    component: () => import('@/views/linkage/Plan.vue'),
+    hidden: false,
+    meta: { 
+      title: '联动预案管理',
+      icon: 'settings',
+      roles: ['admin', 'fire_safety_manager', 'operator'],
+      order: 10
+    },
+  },
 ]
