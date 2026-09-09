@@ -200,15 +200,34 @@ async def get_device(db: AsyncSession, device_id: int, user: User) -> Device | N
     return await _get_device_in_scope(db, device_id, user)
 
 
-async def is_code_taken(
+async def _get_code_conflict(
     db: AsyncSession, device_code: str, exclude_id: int | None = None
-) -> bool:
-    """设备编码唯一性校验（排除自身）"""
-    stmt = select(Device.id).where(Device.device_code == device_code)
+) -> tuple[int, bool] | None:
+    """
+    查询设备编码冲突记录。
+    返回 (id, is_deleted)：is_deleted=True 表示该编码被已逻辑删除档案占用。
+    """
+    stmt = select(Device.id, Device.is_deleted).where(Device.device_code == device_code)
     if exclude_id is not None:
         stmt = stmt.where(Device.id != exclude_id)
-    result = await db.execute(stmt.limit(1))
-    return result.scalar_one_or_none() is not None
+    row = (await db.execute(stmt.limit(1))).one_or_none()
+    if row is None:
+        return None
+    return row[0], row[1]
+
+
+def _code_conflict_message(
+    device_code: str, conflict: tuple[int, bool]
+) -> str:
+    """根据冲突记录是否已删除，生成对应的可读错误文案。"""
+    conflict_id, is_deleted = conflict
+    if is_deleted:
+        return (
+            f"设备编码已被已删除档案占用: {device_code}。"
+            f"如需恢复，请调用 POST /api/v1/devices/{conflict_id}/restore 恢复该档案，"
+            "或更换编码。"
+        )
+    return f"设备编码已存在: {device_code}"
 
 
 # ==================== 状态变更留痕 ====================
@@ -241,8 +260,9 @@ async def create_device(
     db: AsyncSession, payload: DeviceCreate, user: User
 ) -> Device:
     """创建设备。编码唯一、类型/区域存在性、扩展属性均需通过校验。"""
-    if await is_code_taken(db, payload.device_code):
-        raise AuthError(400, f"设备编码已存在: {payload.device_code}")
+    conflict = await _get_code_conflict(db, payload.device_code)
+    if conflict is not None:
+        raise AuthError(400, _code_conflict_message(payload.device_code, conflict))
 
     schema = await _get_type_schema(db, payload.type_id)
     await _ensure_org_exists(db, payload.org_id)
@@ -291,8 +311,9 @@ async def update_device(
     # 编码变更需重新校验唯一性
     new_code = data.get("device_code")
     if new_code and new_code != device.device_code:
-        if await is_code_taken(db, new_code, exclude_id=device_id):
-            raise AuthError(400, f"设备编码已存在: {new_code}")
+        conflict = await _get_code_conflict(db, new_code, exclude_id=device_id)
+        if conflict is not None:
+            raise AuthError(400, _code_conflict_message(new_code, conflict))
 
     # 类型或属性任一变化都要重新校验扩展属性
     if "type_id" in data or "attributes" in data:
@@ -374,3 +395,40 @@ async def delete_device(db: AsyncSession, device_id: int, user: User) -> Device 
     )
     await db.commit()
     return device
+
+
+async def restore_device(
+    db: AsyncSession, device_id: int, user: User
+) -> Device | None:
+    """恢复逻辑删除的设备档案，恢复前校验编码不与未删除档案冲突。"""
+    base = select(Device).where(Device.id == device_id, Device.is_deleted.is_(True))
+    scoped = await apply_data_scope(base, user, db)
+    stmt = scoped.options(
+        selectinload(Device.device_type),
+        selectinload(Device.org),
+        selectinload(Device.creator),
+    )
+    device = (await db.execute(stmt)).scalar_one_or_none()
+    if device is None:
+        return None
+
+    conflict = await _get_code_conflict(db, device.device_code, exclude_id=device.id)
+    if conflict is not None and not conflict[1]:
+        raise AuthError(
+            400,
+            f"恢复失败：设备编码 {device.device_code} 已被其他未删除档案占用，"
+            "请先处理冲突后再恢复该档案。",
+        )
+
+    device.is_deleted = False
+    db.add(device)
+    await write_status_log(
+        db,
+        device_id=device.id,
+        old_status=device.status,
+        new_status=device.status,
+        changed_by=user.id,
+        reason="档案恢复",
+    )
+    await db.commit()
+    return await device_crud.reload(db, device.id)

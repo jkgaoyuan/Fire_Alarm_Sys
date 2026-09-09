@@ -67,7 +67,10 @@ async def import_env(db_session):
         db_session, "hydrant", "消火栓", {"outlet_count": {"label": "水带数量", "type": "number"}}
     )
     chief = await create_device_user(
-        db_session, username="chief", perm_codes=["device:create", "device:view"], data_scope="all"
+        db_session,
+        username="chief",
+        perm_codes=["device:create", "device:view", "device:delete"],
+        data_scope="all",
     )
     return {"org": org, "user": chief}
 
@@ -171,6 +174,37 @@ async def test_import_duplicate_code(client, import_env, db_session):
     assert data["failures"] == [
         {"row": 3, "device_code": "DEV-EXISTS", "reason": "设备编码已存在: DEV-EXISTS"}
     ]
+
+
+@pytest.mark.asyncio
+async def test_import_duplicate_deleted_code_reports_restore_entry(
+    client, import_env, db_session
+):
+    """导入时撞到已逻辑删除档案，错误文案应提示恢复入口"""
+    env = import_env
+    org_id = env["org"].id
+    headers = auth_headers(env["user"])
+    payload = device_payload(1, org_id, "DEV-EXISTS-DEL")
+    payload["attributes"] = {}
+    created = (
+        await client.post("/api/v1/devices", headers=headers, json=payload)
+    ).json()["data"]
+    await client.delete(f"/api/v1/devices/{created['id']}", headers=headers)
+
+    content = build_xlsx(
+        [
+            valid_row("DEV-NEW-002", "smoke_detector", org_id),
+            valid_row("DEV-EXISTS-DEL", "smoke_detector", org_id),
+        ]
+    )
+    resp = await _upload(client, env, content)
+    data = resp.json()["data"]
+    assert (data["total"], data["success"], data["failed"]) == (2, 1, 1)
+    failure = data["failures"][0]
+    assert failure["row"] == 3
+    assert failure["device_code"] == "DEV-EXISTS-DEL"
+    assert "设备编码已被已删除档案占用" in failure["reason"]
+    assert f"/api/v1/devices/{created['id']}/restore" in failure["reason"]
 
 
 @pytest.mark.asyncio

@@ -252,3 +252,41 @@ async def test_delete_device_is_soft_delete(client, device_env, db_session):
         await db_session.execute(select(Device).where(Device.id == device_id))
     ).scalar_one()
     assert row.is_deleted is True
+
+
+@pytest.mark.asyncio
+async def test_create_with_deleted_code_reports_restore_entry(client, device_env):
+    """编码被已删除档案占用时，错误文案应指明来源并提供恢复入口"""
+    headers = auth_headers(device_env["user"])
+    created = (await _create(client, device_env, "DEV-DEL-001")).json()["data"]
+
+    await client.delete(f"/api/v1/devices/{created['id']}", headers=headers)
+
+    resp = await _create(client, device_env, "DEV-DEL-001")
+    assert resp.status_code == 400
+    message = resp.json()["message"]
+    assert "设备编码已被已删除档案占用" in message
+    assert f"/api/v1/devices/{created['id']}/restore" in message
+
+
+@pytest.mark.asyncio
+async def test_restore_soft_deleted_device(client, device_env, db_session):
+    """恢复已逻辑删除的设备后，该设备重新可见且可继续使用原编码"""
+    headers = auth_headers(device_env["user"])
+    created = (await _create(client, device_env, "DEV-RES-001")).json()["data"]
+    device_id = created["id"]
+
+    await client.delete(f"/api/v1/devices/{device_id}", headers=headers)
+
+    resp = await client.post(f"/api/v1/devices/{device_id}/restore", headers=headers)
+    assert resp.status_code == 200
+    assert resp.json()["data"]["is_deleted"] is False
+
+    resp = await client.get(f"/api/v1/devices/{device_id}", headers=headers)
+    assert resp.status_code == 200
+    assert resp.json()["data"]["device_code"] == "DEV-RES-001"
+
+    row = (
+        await db_session.execute(select(Device).where(Device.id == device_id))
+    ).scalar_one()
+    assert row.is_deleted is False

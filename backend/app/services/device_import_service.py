@@ -217,13 +217,24 @@ def parse_row(
     row: dict[str, Any],
     type_map: dict[str, DeviceType],
     org_ids: set[int],
-    taken_codes: set[str],
+    code_map: dict[str, tuple[int, bool]],
 ) -> Device:
-    """一行 Excel → 待插入的 Device 实例；任一校验不通过抛 RowError"""
+    """
+    一行 Excel → 待插入的 Device 实例；任一校验不通过抛 RowError。
+    code_map 为 {device_code: (id, is_deleted)}，用于区分撞库的是活跃档案还是已删除档案。
+    """
     device_code = _text(row.get("device_code"))
     if not device_code:
         raise RowError("设备编码不能为空")
-    if device_code in taken_codes:
+    conflict = code_map.get(device_code)
+    if conflict is not None:
+        conflict_id, is_deleted = conflict
+        if is_deleted:
+            raise RowError(
+                f"设备编码已被已删除档案占用: {device_code}。"
+                f"如需恢复，请调用 POST /api/v1/devices/{conflict_id}/restore 恢复该档案，"
+                "或更换编码。"
+            )
         raise RowError(f"设备编码已存在: {device_code}")
 
     device_name = _text(row.get("device_name"))
@@ -301,7 +312,7 @@ async def import_devices(
 
     type_map, org_ids = await _load_lookup(db)
     codes = [code for code in (_text(r.get("device_code")) for _, r in rows) if code]
-    taken_codes = await device_crud.get_codes_in_use(db, codes)
+    code_map = await device_crud.get_codes_in_use(db, codes)
 
     failures: list[dict[str, Any]] = []
     pending: list[tuple[int, Device]] = []
@@ -309,11 +320,12 @@ async def import_devices(
     for row_no, row in rows:
         code = _text(row.get("device_code"))
         try:
-            device = parse_row(row, type_map, org_ids, taken_codes)
+            device = parse_row(row, type_map, org_ids, code_map)
         except RowError as exc:
             failures.append({"row": row_no, "device_code": code, "reason": str(exc)})
             continue
-        taken_codes.add(device.device_code)
+        # 用 id=0 占位，标记该编码已被本批次占用（视为活跃档案）
+        code_map[device.device_code] = (0, False)
         device.created_by = user.id
         pending.append((row_no, device))
 

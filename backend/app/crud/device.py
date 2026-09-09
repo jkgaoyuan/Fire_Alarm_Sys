@@ -42,14 +42,19 @@ class DeviceCRUD(CRUDBase[Device, DeviceCreate, DeviceUpdate]):
 
     async def get_codes_in_use(
         self, db: AsyncSession, codes: list[str]
-    ) -> set[str]:
-        """批量查询已占用的设备编码（导入时一次性查重，避免 N+1）"""
+    ) -> dict[str, tuple[int, bool]]:
+        """
+        批量查询已占用的设备编码（导入时一次性查重，避免 N+1）。
+        返回 {device_code: (id, is_deleted)}，用于区分活跃档案与已逻辑删除档案。
+        """
         if not codes:
-            return set()
+            return {}
         result = await db.execute(
-            select(self.model.device_code).where(self.model.device_code.in_(codes))
+            select(self.model.device_code, self.model.id, self.model.is_deleted).where(
+                self.model.device_code.in_(codes)
+            )
         )
-        return {row[0] for row in result.all()}
+        return {row[0]: (row[1], row[2]) for row in result.all()}
 
 
 device_crud = DeviceCRUD(Device)

@@ -33,6 +33,7 @@ from app.services.device_service import (
     delete_device,
     get_device,
     list_devices,
+    restore_device,
     retire_device,
     update_device,
 )
@@ -359,6 +360,19 @@ async def delete_device_api(
     if device is None:
         return {"code": 404, "message": "设备不存在", "data": None}
     return {"code": 200, "message": "删除成功", "data": None}
+
+
+@router.post("/{device_id}/restore", response_model=dict)
+async def restore_device_api(
+    device_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("device:delete")),
+):
+    """恢复已逻辑删除的设备档案"""
+    device = await restore_device(db, device_id, user)
+    if device is None:
+        return {"code": 404, "message": "设备不存在或未被删除", "data": None}
+    return {"code": 200, "message": "恢复成功", "data": _device_out(device)}
 
 
 def _device_out(device) -> dict:
