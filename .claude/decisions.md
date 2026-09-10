@@ -105,6 +105,23 @@
 - **来源会话**: 2026-09-09 05:45
 - **回滚条件**: 若产品确认 `self` 用户在报警中心应仅看自己手动创建的报警（不含自动上报），可恢复 `created_by` 过滤并单独处理自动上报可见性。
 
+## DEC-013：3.6 巡检模块使用 FastAPI lifespan + asyncio 后台任务替代 Celery
+
+- **决策**: 3.1~3.6 阶段暂不引入 Celery，所有定时任务（巡检任务生成、漏检扫描）均通过 FastAPI `lifespan` + `asyncio.create_task()` 实现。
+- **原因**: 
+  1. 系统规模较小（≤10,000 设备），单进程 asyncio 定时任务已满足需求
+  2. 减少外部依赖（Celery + Redis broker），降低部署复杂度
+  3. PRD v2.0 第 2.2 节已明确此技术路线
+- **影响范围**:
+  - `backend/app/main.py`: lifespan 事件中注册 `inspection_scheduler` 后台任务
+  - `backend/services/inspection_scheduler.py`: 实现任务生成与漏检扫描逻辑
+  - `backend/models/inspection_tasks`: 唯一约束 `(plan_id, task_date)` 防止多 worker 重复生成
+- **来源会话**: 2026-09-10 审计 3.6 开发计划（DEC-013）
+- **回滚条件**: 
+  1. 3.9 统计报表阶段需跨多个服务协调异步任务时，可引入 Celery
+  2. 监控发现重复任务生成且数据库约束不足兜底时，评估集成 `aioredis` 分布式锁
+  3. 设备规模扩张至 >50,000 或并发任务数 >100 时重新评估
+
 ---
 
 ## 未编号的计划调整（非 ADR，仅备查）

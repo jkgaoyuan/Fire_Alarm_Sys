@@ -28,3 +28,7 @@ class DeviceType(Base):
         "Device",
         back_populates="device_type",
     )
+    inspection_plans: Mapped[List["InspectionPlan"]] = relationship(
+        "InspectionPlan",
+        back_populates="device_type",
+    )

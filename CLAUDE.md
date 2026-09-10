@@ -27,8 +27,12 @@
   3. **前后端 API 集成时**：先阅读 `docs/plan/API_RESPONSE_FORMAT_SPECIFICATION.md`
      - 统一响应格式约定 `{code, message, data, timestamp}`
      - 避免格式不一致导致的解析错误（第 3.4 章节教训）
-  
-  4. **需要查询项目架构或技术细节时**：查阅记忆系统
+    
+  4. **Celery 技术栈说明**：参考项目根目录 `消防监控管理系统_PRD_v2.0.md` 的 `2.2 Celery 引入时机说明`
+     - 3.1~3.6 阶段：暂不引入 Celery，使用 FastAPI `lifespan` + `asyncio.create_task()` 处理定时任务
+     - 3.9 统计报表阶段：评估是否引入 Celery（若需跨多个服务协调任务或大数据量导出）
+    
+  5. **需要查询项目架构或技术细节时**：查阅记忆系统
      - 数据库 Schema: `project_info > project_architecture > Fire Alarm System permission database schema conventions`
      - 环境配置：`project_info > project_environment_configuration`
      - 技术栈：`project_info > project_tech_stack`

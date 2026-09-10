@@ -37,10 +37,10 @@ async def db_engine():
 
 @pytest_asyncio.fixture
 async def db_session(db_engine):
-    """数据库会话"""
-    async with TestingSessionLocal() as session:
-        yield session
-        await session.rollback()
+    """数据库会话 - 简单模式（不处理异步 close）"""
+    session = TestingSessionLocal()
+    # 直接 yield，让 pytest/事件循环管理生命周期
+    yield session
 
 
 @pytest_asyncio.fixture
@@ -82,7 +82,7 @@ from app.models.user import Role, User
 
 @pytest_asyncio.fixture
 async def test_user(db_session):
-    """预置测试用户（含角色关联）"""
+    """预置测试用户（含角色关联 + 巡检权限）"""
     # 创建测试角色
     role = Role(
         role_code="test_role",
@@ -90,8 +90,24 @@ async def test_user(db_session):
         is_builtin=False,
     )
     db_session.add(role)
-    await db_session.commit()
-    await db_session.refresh(role)
+    await db_session.flush()
+
+    # 创建巡检相关权限
+    permissions = []
+    for perm_code in ["inspection:view", "inspection:create", "inspection:update", "inspection:execute", "inspection:stat"]:
+        perm = Permission(
+            perm_code=perm_code,
+            perm_name=perm_code.split(":")[1].title(),  # view -> View, create -> Create
+            perm_type="api",
+            parent_id=None,
+        )
+        permissions.append(perm)
+        db_session.add(perm)
+    
+    await db_session.flush()
+
+    # 将权限关联到角色
+    role.permissions.extend(permissions)
 
     # 创建测试用户
     user = User(
@@ -119,9 +135,11 @@ async def test_client_with_user(client, test_user, fake_redis):
     original_request = client.request
 
     async def _authenticated_request(method, url, **kwargs):
-        headers = kwargs.pop("headers", {})
-        headers["Authorization"] = f"Bearer {token}"
-        return await original_request(method, url, headers=headers, **kwargs)
+        # 确保 kwargs['headers'] 是一个 dict
+        current_headers = kwargs.get("headers") or {}
+        current_headers["Authorization"] = f"Bearer {token}"
+        kwargs["headers"] = current_headers
+        return await original_request(method, url, **kwargs)
 
     # 替换请求方法（自动携带 Token）
     client.request = _authenticated_request

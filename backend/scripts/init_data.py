@@ -110,9 +110,12 @@ BUTTON_PERMS = [
     {"perm_code": "emergency:close",      "perm_name": "关闭事件",     "perm_type": "button", "parent_code": "emergency:event"},
     {"perm_code": "emergency:export",     "perm_name": "导出报告",     "perm_type": "button", "parent_code": "emergency:event"},
     # 巡检任务
-    {"perm_code": "inspection:record", "perm_name": "巡检记录", "perm_type": "button", "parent_code": "inspection:task"},
-    {"perm_code": "inspection:plan",   "perm_name": "巡检计划", "perm_type": "button", "parent_code": "inspection:task"},
-    {"perm_code": "inspection:stat",   "perm_name": "巡检统计", "perm_type": "button", "parent_code": "inspection:task"},
+    {"perm_code": "inspection:view",      "perm_name": "查看巡检",   "perm_type": "button", "parent_code": "inspection:task"},
+    {"perm_code": "inspection:create",    "perm_name": "新增计划",   "perm_type": "button", "parent_code": "inspection:task"},
+    {"perm_code": "inspection:update",    "perm_name": "编辑计划",   "perm_type": "button", "parent_code": "inspection:task"},
+    {"perm_code": "inspection:delete",    "perm_name": "删除计划",   "perm_type": "button", "parent_code": "inspection:task"},
+    {"perm_code": "inspection:execute",   "perm_name": "执行巡检",   "perm_type": "button", "parent_code": "inspection:task"},
+    {"perm_code": "inspection:stat",      "perm_name": "巡检统计",   "perm_type": "button", "parent_code": "inspection:task"},
     # 消防演练
     {"perm_code": "drill:full", "perm_name": "演练全流程", "perm_type": "button", "parent_code": "drill:event"},
     # 统计报表
@@ -155,7 +158,8 @@ ROLE_PERM_MAP = {
         "device:archive", "inspection:task", "statistics:report",
         # 按钮
         "device:view", "device:repair",
-        "inspection:record",
+        "inspection:execute",  # 仅可执行巡检，不可管理计划
+        "inspection:stat",     # 可查看统计
         "statistics:partial",
     ],
     "chief": [

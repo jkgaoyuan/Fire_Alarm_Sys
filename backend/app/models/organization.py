@@ -51,3 +51,7 @@ class Organization(Base):
         "Device",
         back_populates="org",
     )
+    inspection_plans: Mapped[List["InspectionPlan"]] = relationship(
+        "InspectionPlan",
+        back_populates="organization",
+    )

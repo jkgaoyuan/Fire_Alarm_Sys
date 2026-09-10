@@ -16,7 +16,11 @@ from app.api.v1 import (
     users,
     linkage_plans,
     linkage_logs,
+    repair,
 )
+from app.api.v1.emergency_events import router as emergency_router
+from app.api.v1.notifications import router as notification_router
+from app.api.v1 import inspection
 
 router = APIRouter()
 
@@ -55,3 +59,15 @@ router.include_router(linkage_plans.router, prefix="/linkage-plans", tags=["Link
 
 # Register linkage logs router (3.4)
 router.include_router(linkage_logs.router, prefix="/alarm-linkage-logs", tags=["Linkage Logs"])
+
+# 3.5 应急事件路由
+router.include_router(emergency_router, prefix="/emergency-events", tags=["应急处置"])
+
+# 3.5 通知中心路由（与应急事件关联）
+router.include_router(notification_router, prefix="/notifications", tags=["通知中心"])
+
+# 3.6 巡检管理路由
+router.include_router(inspection.router, tags=["设备巡检"])
+
+# 3.7 维修工单管理路由
+router.include_router(repair.router, tags=["维修工单"])
