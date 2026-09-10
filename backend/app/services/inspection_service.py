@@ -128,12 +128,12 @@ async def generate_tasks_for_plan(
     if target_date is None:
         target_date = date.today()
     
-    # 检查是否已存在
-    existing_task = await inspection_task_crud.get_multi(
-        db,
-        filters={"plan_id": plan_id, "task_date": target_date},
-        limit=1
-    )
+    # 检查是否已存在（同计划同日期只生成一次）
+    existing_stmt = select(InspectionTask).where(
+        InspectionTask.plan_id == plan_id,
+        InspectionTask.task_date == target_date,
+    ).limit(1)
+    existing_task = (await db.execute(existing_stmt)).scalars().first()
     
     if existing_task:
         # 已存在则跳过

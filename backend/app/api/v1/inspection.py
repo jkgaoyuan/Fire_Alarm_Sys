@@ -25,7 +25,7 @@ PRD 章节：3.6 设备巡检
 """
 
 from datetime import date, datetime
-from typing import Optional
+from typing import Optional, List
 from fastapi import APIRouter, Depends, Query, status, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -33,6 +33,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.dependencies import get_db, require_permission
 from app.models.inspection import InspectionPlan, InspectionTask, InspectionRecord
+from app.schemas.auth import ResponseModel as Response
 from app.schemas.inspection import (
     InspectionPlanCreate,
     InspectionPlanUpdate,
@@ -63,7 +64,7 @@ router = APIRouter(tags=["Inspection"])
 
 @router.get(
     "/inspection-plans",
-    response_model=InspectionPlanPagination,
+    response_model=Response[InspectionPlanPagination],
     summary="获取巡检计划列表",
     dependencies=[Depends(require_permission("inspection:view"))]
 )
@@ -113,17 +114,21 @@ async def get_inspection_plans(
         )
         items.append(plan_with_stats)
     
-    return InspectionPlanPagination(
-        items=items,
-        total=total or 0,
-        page=page,
-        page_size=page_size,
+    return Response(
+        code=200,
+        message="success",
+        data=InspectionPlanPagination(
+            items=items,
+            total=total or 0,
+            page=page,
+            page_size=page_size,
+        )
     )
 
 
 @router.post(
     "/inspection-plans",
-    response_model=InspectionPlanResponse,
+    response_model=Response[InspectionPlanResponse],
     summary="创建巡检计划",
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_permission("inspection:create"))]
@@ -134,7 +139,7 @@ async def create_inspection_plan(
 ):
     """创建新巡检计划"""
     # 验证责任人存在
-    user_stmt = select(InspectionPlan.responsible_user_id).where(User.id == data.responsible_user_id)
+    user_stmt = select(User.id).where(User.id == data.responsible_user_id)
     user_exists = (await db.execute(user_stmt)).scalar_one_or_none()
     if not user_exists:
         raise HTTPException(
@@ -146,12 +151,12 @@ async def create_inspection_plan(
     db.add(plan)
     await db.commit()
     await db.refresh(plan)
-    return InspectionPlanResponse.model_validate(plan)
+    return Response(code=201, message="Created", data=InspectionPlanResponse.model_validate(plan))
 
 
 @router.get(
     "/inspection-plans/{plan_id}",
-    response_model=InspectionPlanWithStats,
+    response_model=Response[InspectionPlanWithStats],
     summary="获取计划详情与统计",
     dependencies=[Depends(require_permission("inspection:view"))]
 )
@@ -183,12 +188,12 @@ async def get_inspection_plan_detail(
         created_at=plan.created_at,
         **stats
     )
-    return result
+    return Response(code=200, message="success", data=result)
 
 
 @router.put(
     "/inspection-plans/{plan_id}",
-    response_model=InspectionPlanResponse,
+    response_model=Response[InspectionPlanResponse],
     summary="更新巡检计划",
     dependencies=[Depends(require_permission("inspection:update"))]
 )
@@ -211,12 +216,12 @@ async def update_inspection_plan(
     
     await db.commit()
     await db.refresh(plan)
-    return InspectionPlanResponse.model_validate(plan)
+    return Response(code=201, message="Created", data=InspectionPlanResponse.model_validate(plan))
 
 
 @router.delete(
     "/inspection-plans/{plan_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=Response[None],
     summary="删除巡检计划",
     dependencies=[Depends(require_permission("inspection:delete"))]
 )
@@ -239,12 +244,12 @@ async def delete_inspection_plan(
         )
     
     await inspection_plan_crud.remove(db, plan_id)
-    return None
+    return Response(code=200, message="deleted", data=None)
 
 
 @router.post(
     "/inspection-plans/{plan_id}/toggle",
-    response_model=InspectionPlanResponse,
+    response_model=Response[InspectionPlanResponse],
     summary="启用/停用巡检计划",
     dependencies=[Depends(require_permission("inspection:update"))]
 )
@@ -264,12 +269,12 @@ async def toggle_inspection_plan_status(
     plan.is_enabled = data.get("is_enabled", not plan.is_enabled)
     await db.commit()
     await db.refresh(plan)
-    return InspectionPlanResponse.model_validate(plan)
+    return Response(code=201, message="Created", data=InspectionPlanResponse.model_validate(plan))
 
 
 @router.post(
     "/inspection-plans/{plan_id}/generate",
-    response_model=list[InspectionTaskResponse],
+    response_model=Response[List[InspectionTaskResponse]],
     summary="手动生成巡检任务",
     dependencies=[Depends(require_permission("inspection:create"))]
 )
@@ -310,14 +315,15 @@ async def manual_generate_tasks(
             generated.extend(task_list)
         tasks = generated
     
-    return [InspectionTaskResponse.model_validate(t) for t in tasks]
+    tasks = [InspectionTaskResponse.model_validate(t) for t in tasks]
+    return Response(code=200, message="Generated", data=tasks)
 
 
 # ==================== 巡检任务管理 ====================
 
 @router.get(
     "/inspection-tasks",
-    response_model=InspectionTaskPagination,
+    response_model=Response[InspectionTaskPagination],
     summary="获取巡检任务列表",
     dependencies=[Depends(require_permission("inspection:view"))]
 )
@@ -383,11 +389,15 @@ async def get_inspection_tasks(
         )
         items.append(item)
     
-    return InspectionTaskPagination(
-        items=items,
-        total=total or 0,
-        page=page,
-        page_size=page_size,
+    return Response(
+        code=200,
+        message="success",
+        data=InspectionTaskPagination(
+            items=items,
+            total=total or 0,
+            page=page,
+            page_size=page_size,
+        )
     )
 
 
@@ -414,14 +424,14 @@ async def submit_record(
     )
     
     await db.refresh(record)
-    return InspectionRecordResponse.model_validate(record)
+    return Response(code=200, message="success", data=InspectionRecordResponse.model_validate(record))
 
 
 # ==================== 巡检记录查询 ====================
 
 @router.get(
     "/inspection-records",
-    response_model=InspectionRecordPagination,
+    response_model=Response[InspectionRecordPagination],
     summary="获取巡检记录列表",
     dependencies=[Depends(require_permission("inspection:view"))]
 )
@@ -467,11 +477,15 @@ async def get_inspection_records(
     
     items = [InspectionRecordResponse.model_validate(r) for r in results]
     
-    return InspectionRecordPagination(
-        items=items,
-        total=total or 0,
-        page=page,
-        page_size=page_size,
+    return Response(
+        code=200,
+        message="success",
+        data=InspectionRecordPagination(
+            items=items,
+            total=total or 0,
+            page=page,
+            page_size=page_size,
+        )
     )
 
 
@@ -479,7 +493,7 @@ async def get_inspection_records(
 
 @router.get(
     "/inspection-missed-stats",
-    response_model=InspectionMissedStat,
+    response_model=Response[InspectionMissedStat],
     summary="获取漏检统计数据",
     dependencies=[Depends(require_permission("inspection:stat"))]
 )
@@ -500,7 +514,11 @@ async def get_missed_statistics(
         ],
         notification_sent=False,
     )
-    return stat
+    return Response(
+        code=200,
+        message="success",
+        data=stat
+    )
 
 
 # 需要导入 User 模型

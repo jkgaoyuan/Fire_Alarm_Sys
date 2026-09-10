@@ -85,7 +85,7 @@ class InspectionPlan(Base):
     
     # 周期配置
     cycle_type: Mapped[str] = mapped_column(
-        SQLEnum(InspectionCycleType, name="inspection_cycle_type"),
+        String(20),
         nullable=False
     )
     cycle_days: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
@@ -141,7 +141,7 @@ class InspectionTask(Base):
     
     # 状态
     status: Mapped[str] = mapped_column(
-        SQLEnum(InspectionTaskStatus, name="inspection_task_status"),
+        String(20),
         default="pending",
         nullable=False
     )
@@ -202,7 +202,7 @@ class InspectionRecord(Base):
     
     # 巡检结果
     result: Mapped[str] = mapped_column(
-        SQLEnum(InspectionRecordResult, name="inspection_record_result"),
+        String(20),
         nullable=False
     )
     

@@ -7,7 +7,7 @@
 
 from datetime import date, datetime
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from enum import Enum
 
 
@@ -70,6 +70,8 @@ class InspectionPlanUpdate(BaseModel):
 class InspectionPlanResponse(BaseModel):
     """巡检计划详情响应"""
 
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     plan_name: str
     org_id: Optional[int] = None
@@ -94,6 +96,8 @@ class InspectionPlanWithStats(InspectionPlanResponse):
 
 class InspectionTaskResponse(BaseModel):
     """巡检任务响应"""
+
+    model_config = ConfigDict(from_attributes=True)
 
     id: int
     plan_id: int
@@ -142,6 +146,8 @@ class InspectionRecordCreate(BaseModel):
 
 class InspectionRecordResponse(BaseModel):
     """巡检记录响应"""
+
+    model_config = ConfigDict(from_attributes=True)
 
     id: int
     task_id: int

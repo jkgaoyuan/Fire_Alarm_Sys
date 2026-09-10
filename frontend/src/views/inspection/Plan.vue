@@ -391,7 +391,7 @@ async function handleDelete(row) {
       url: `/api/v1/inspection-plans/${row.id}`,
     })
     
-    if (response.code === 204 || response.status === 204) {
+    if (response.code === 200 || response.code === 204 || response.status === 204) {
       ElMessage.success('删除成功')
       loadPlans()
     } else {
