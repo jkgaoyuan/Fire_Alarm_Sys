@@ -13,7 +13,7 @@ from app.models.linkage import AlarmLinkageLog
 from app.crud.linkage import alarm_linkage_log_crud
 from app.schemas.linkage import AlarmLinkageLogOut
 
-router = APIRouter(prefix="/alarm-linkage-logs", tags=["联动日志"])
+router = APIRouter(tags=["Linkage Logs"])
 
 
 @router.get(

@@ -62,10 +62,11 @@ MENU_LEVEL1 = [
     {"perm_code": "alarm:center",      "perm_name": "报警中心",   "perm_type": "menu", "route_path": "/alarm/center",      "component": "views/alarm/Center.vue",         "icon": "Bell",      "sort_order": 2},
     {"perm_code": "device:archive",    "perm_name": "设备档案",   "perm_type": "menu", "route_path": "/device/archive",    "component": "views/device/Archive.vue",       "icon": "Box",       "sort_order": 3},
     {"perm_code": "linkage:plan",      "perm_name": "联动预案",   "perm_type": "menu", "route_path": "/linkage/plan",      "component": "views/linkage/Plan.vue",         "icon": "Link",      "sort_order": 4},
-    {"perm_code": "inspection:task",   "perm_name": "巡检任务",   "perm_type": "menu", "route_path": "/inspection/task",   "component": "views/inspection/Task.vue",      "icon": "Calendar",  "sort_order": 5},
-    {"perm_code": "drill:event",       "perm_name": "消防演练",   "perm_type": "menu", "route_path": "/drill/event",       "component": "views/drill/Event.vue",          "icon": "Fire",      "sort_order": 6},
-    {"perm_code": "statistics:report", "perm_name": "统计报表",   "perm_type": "menu", "route_path": "/statistics/report", "component": "views/statistics/Report.vue",    "icon": "Trend",     "sort_order": 7},
-    {"perm_code": "system:management", "perm_name": "系统管理",   "perm_type": "menu", "route_path": "/system",            "component": "Layout",                         "icon": "Setting",   "sort_order": 8},
+    {"perm_code": "emergency:event",   "perm_name": "应急处置",   "perm_type": "menu", "route_path": "/emergency/event",   "component": "views/emergency/Event.vue",      "icon": "FirstAidKit", "sort_order": 5},
+    {"perm_code": "inspection:task",   "perm_name": "巡检任务",   "perm_type": "menu", "route_path": "/inspection/task",   "component": "views/inspection/Task.vue",      "icon": "Calendar",  "sort_order": 6},
+    {"perm_code": "drill:event",       "perm_name": "消防演练",   "perm_type": "menu", "route_path": "/drill/event",       "component": "views/drill/Event.vue",          "icon": "Fire",      "sort_order": 7},
+    {"perm_code": "statistics:report", "perm_name": "统计报表",   "perm_type": "menu", "route_path": "/statistics/report", "component": "views/statistics/Report.vue",    "icon": "Trend",     "sort_order": 8},
+    {"perm_code": "system:management", "perm_name": "系统管理",   "perm_type": "menu", "route_path": "/system",            "component": "Layout",                         "icon": "Setting",   "sort_order": 9},
 ]
 
 # 系统管理子菜单
@@ -102,6 +103,12 @@ BUTTON_PERMS = [
     {"perm_code": "linkage:delete",    "perm_name": "删除预案",     "perm_type": "button", "parent_code": "linkage:plan"},
     {"perm_code": "linkage:execute",   "perm_name": "执行联动",     "perm_type": "button", "parent_code": "linkage:plan"},
     {"perm_code": "linkage:simulate",  "perm_name": "模拟测试",     "perm_type": "button", "parent_code": "linkage:plan"},
+    # 应急处置
+    {"perm_code": "emergency:view",       "perm_name": "查看事件",     "perm_type": "button", "parent_code": "emergency:event"},
+    {"perm_code": "emergency:timeline",   "perm_name": "时间轴记录",   "perm_type": "button", "parent_code": "emergency:event"},
+    {"perm_code": "emergency:resolve",    "perm_name": "处置完成",     "perm_type": "button", "parent_code": "emergency:event"},
+    {"perm_code": "emergency:close",      "perm_name": "关闭事件",     "perm_type": "button", "parent_code": "emergency:event"},
+    {"perm_code": "emergency:export",     "perm_name": "导出报告",     "perm_type": "button", "parent_code": "emergency:event"},
     # 巡检任务
     {"perm_code": "inspection:record", "perm_name": "巡检记录", "perm_type": "button", "parent_code": "inspection:task"},
     {"perm_code": "inspection:plan",   "perm_name": "巡检计划", "perm_type": "button", "parent_code": "inspection:task"},
@@ -140,6 +147,8 @@ ROLE_PERM_MAP = {
         "statistics:partial",
         # 联动预案（值班员只能查看和执行）
         "linkage:view", "linkage:execute",
+        # 应急处置（值班员可参与时间轴记录）
+        "emergency:view", "emergency:timeline",
     ],
     "maintainer": [
         # 菜单

@@ -9,6 +9,7 @@ const viewComponents = {
   'views/alarm/Center.vue': () => import('@/views/alarm/Center.vue'),
   'views/device/Archive.vue': () => import('@/views/device/Archive.vue'),
   'views/linkage/Plan.vue': () => import('@/views/linkage/Plan.vue'),
+  'views/emergency/Event.vue': () => import('@/views/emergency/Event.vue'),
   'views/inspection/Task.vue': () => import('@/views/inspection/Task.vue'),
   'views/drill/Event.vue': () => import('@/views/drill/Event.vue'),
   'views/statistics/Report.vue': () => import('@/views/statistics/Report.vue'),

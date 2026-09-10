@@ -50,8 +50,8 @@ router.include_router(monitor.router, prefix="/monitor", tags=["实时监控"])
 # 注册报警中心路由（3.3：查询、确认、消音、复位）
 router.include_router(alarms.router, prefix="/alarms", tags=["报警中心"])
 
-# 注册联动预案路由（3.4）
-router.include_router(linkage_plans.router, prefix="/linkage-plans", tags=["联动预案"])
+# Register linkage plans router (3.4)
+router.include_router(linkage_plans.router, prefix="/linkage-plans", tags=["Linkage Plans"])
 
-# 注册联动日志路由（3.4）
-router.include_router(linkage_logs.router, prefix="/alarm-linkage-logs", tags=["联动日志"])
+# Register linkage logs router (3.4)
+router.include_router(linkage_logs.router, prefix="/alarm-linkage-logs", tags=["Linkage Logs"])

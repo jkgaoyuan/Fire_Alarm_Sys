@@ -1,5 +1,4 @@
 from sqlalchemy import ForeignKey, String, Boolean, Integer, Text, DateTime, func
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncAttrs
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -10,6 +9,7 @@ from app.models.device import Device
 from app.models.device_type import DeviceType
 from app.models.organization import Organization
 from app.models.user import User
+from app.models.types import json_type
 
 
 class LinkagePlan(Base):
@@ -23,7 +23,7 @@ class LinkagePlan(Base):
         ForeignKey("device_types.id"), index=True
     )
     trigger_alarm_type: Mapped[str | None] = mapped_column(String(20))
-    actions: Mapped[list[dict]] = mapped_column(JSONB, default=list)
+    actions: Mapped[list[dict]] = mapped_column(json_type(), default=list)
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
     # DEC-004: created_by

@@ -4,6 +4,7 @@ FastAPI 应用入口
 """
 
 from contextlib import asynccontextmanager
+from typing import Optional
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,17 +12,23 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.v1 import router as api_v1_router
+from app.api.v1.emergency_events import router as emergency_router
+from app.api.v1.notifications import router as notification_router
 from app.api.ws_devices import router as ws_router
 from app.core.config import get_settings
 from app.core.exceptions import AuthError, NotFoundError
 from app.db.redis import close_redis_pool, get_redis_pool
 from app.services import ws_broadcaster
+from app.services.emergency_service import EmergencyEscalationTask
 from app.services.map_image_service import map_image_dir
 from app.tasks import offline_monitor
 from app.ws.connection_manager import manager
 
 settings = get_settings()
+escalation_task: Optional[EmergencyEscalationTask] = None  # 超时升级后台任务
 
+
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -29,6 +36,7 @@ async def lifespan(app: FastAPI):
     # 启动时执行
     print(f"[START] {settings.APP_NAME} v{settings.APP_VERSION} started")
     offline_monitor.start()
+    
     # P2-008：eager 启动 WS 扇出消费者，确保多 worker 下每个进程都消费全量消息
     try:
         redis = await get_redis_pool()
@@ -36,9 +44,20 @@ async def lifespan(app: FastAPI):
         print(f"[START] ws broadcaster started (group={ws_broadcaster.group_name()})")
     except Exception as exc:
         print(f"[WARN] ws broadcaster failed to start: {exc}")
+    
+    # 3.5-B3: 启动 5 分钟超时升级扫描任务（每 60 秒一次）
+    global escalation_task
+    engine = create_async_engine(settings.database_url_async)
+    escalation_task = EmergencyEscalationTask(interval_seconds=60)
+    await escalation_task.start(engine)
+    print("[START] Emergency escalation scan task started (60s interval)")
+    
     yield
+    
     # 关闭时执行：先停推送扇出与心跳，再释放连接与 Redis
     await offline_monitor.stop()
+    if escalation_task:
+        await escalation_task.stop()
     await ws_broadcaster.shutdown()
     await manager.stop_heartbeat()
     await manager.close_all()
@@ -67,6 +86,8 @@ app.add_middleware(
 
 # 注册 API 路由
 app.include_router(api_v1_router, prefix="/api/v1")
+app.include_router(emergency_router, prefix="/api/v1")
+app.include_router(notification_router, prefix="/api/v1")
 
 # WebSocket 路由不带 /api/v1 前缀（PRD FR-013 固定地址 /ws/devices）
 app.include_router(ws_router)

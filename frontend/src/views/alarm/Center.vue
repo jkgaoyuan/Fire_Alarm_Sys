@@ -242,6 +242,9 @@
             />
           </el-form-item>
         </template>
+        <el-alert v-if="confirmForm.confirm_result === 'real'" title="提示" type="info" :closable="false" show-icon>
+          确认为真实火警后，系统将自动创建<strong>应急处置事件</strong>，并启动处置流程。
+        </el-alert>
       </el-form>
       <template #footer>
         <el-button @click="confirmVisible = false">取消</el-button>
