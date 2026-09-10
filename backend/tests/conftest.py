@@ -37,10 +37,13 @@ async def db_engine():
 
 @pytest_asyncio.fixture
 async def db_session(db_engine):
-    """数据库会话 - 简单模式（不处理异步 close）"""
+    """数据库会话 - 简单 sync 模式"""
     session = TestingSessionLocal()
-    # 直接 yield，让 pytest/事件循环管理生命周期
-    yield session
+    # Just yield the session directly - use it in test functions
+    try:
+        yield session
+    finally:
+        session.close()  # sync close, not await
 
 
 @pytest_asyncio.fixture
@@ -62,7 +65,8 @@ async def fake_redis():
 async def client(db_session, fake_redis):
     """HTTP 测试客户端（依赖注入覆盖）"""
     async def override_get_db():
-        yield db_session
+        async with db_session as s:
+            yield s
 
     async def override_get_redis():
         yield fake_redis
