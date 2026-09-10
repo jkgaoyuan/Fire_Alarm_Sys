@@ -234,3 +234,93 @@ class RepairOrderCRUD:
         )
         result = await self.db.execute(query)
         return result.scalar_one_or_none()
+
+    # ==================== 统计查询 ====================
+
+    async def get_avg_repair_duration(self) -> float:
+        """计算平均维修时长（小时），仅统计已完成工单"""
+        query = select(
+            func.avg(
+                func.extract('epoch', RepairOrder.completed_at) -
+                func.extract('epoch', RepairOrder.created_at)
+            )
+        ).where(
+            RepairOrder.status == "completed",
+            RepairOrder.completed_at.isnot(None),
+        )
+        result = await self.db.execute(query)
+        avg_seconds = result.scalar()
+        if avg_seconds is None:
+            return 0.0
+        return round(avg_seconds / 3600, 1)
+
+    async def get_status_distribution(self) -> list[dict]:
+        """获取工单状态分布"""
+        query = (
+            select(RepairOrder.status, func.count(RepairOrder.id).label('count'))
+            .group_by(RepairOrder.status)
+        )
+        result = await self.db.execute(query)
+        return [{"status": row.status, "count": row.count} for row in result.all()]
+
+    async def get_workload_by_repairer(self) -> list[dict]:
+        """获取维修人员工作量统计"""
+        query = (
+            select(
+                User.real_name.label('name'),
+                func.count(RepairOrder.id).label('total'),
+                func.count().filter(RepairOrder.status == 'completed').label('completed'),
+            )
+            .join(User, RepairOrder.repairer_id == User.id)
+            .where(RepairOrder.repairer_id.isnot(None))
+            .group_by(User.id, User.real_name)
+            .order_by(desc('total'))
+        )
+        result = await self.db.execute(query)
+        return [
+            {"name": row.name, "total": row.total, "completed": row.completed}
+            for row in result.all()
+        ]
+
+    async def get_fault_type_distribution(self) -> list[dict]:
+        """获取故障类型分布（按设备类型分组）"""
+        from app.models.device_type import DeviceType
+        query = (
+            select(
+                DeviceType.type_name.label('type'),
+                func.count(RepairOrder.id).label('count'),
+            )
+            .join(Device, RepairOrder.device_id == Device.id)
+            .join(DeviceType, Device.type_id == DeviceType.id)
+            .group_by(DeviceType.id, DeviceType.type_name)
+            .order_by(desc('count'))
+        )
+        result = await self.db.execute(query)
+        return [{"type": row.type, "count": row.count} for row in result.all()]
+
+    async def get_top10_fault_devices(self) -> list[dict]:
+        """获取故障设备 TOP10"""
+        from app.models.device_type import DeviceType
+        query = (
+            select(
+                Device.device_code,
+                Device.device_name,
+                DeviceType.type_name,
+                func.count(RepairOrder.id).label('fault_count'),
+            )
+            .join(Device, RepairOrder.device_id == Device.id)
+            .join(DeviceType, Device.type_id == DeviceType.id)
+            .group_by(Device.id, Device.device_code, Device.device_name, DeviceType.type_name)
+            .order_by(desc('fault_count'))
+            .limit(10)
+        )
+        result = await self.db.execute(query)
+        return [
+            {
+                "device_code": row.device_code,
+                "device_name": row.device_name,
+                "type_name": row.type_name,
+                "fault_count": row.fault_count,
+            }
+            for row in result.all()
+        ]

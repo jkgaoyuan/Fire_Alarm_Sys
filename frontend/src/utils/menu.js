@@ -12,6 +12,7 @@ const viewComponents = {
   'views/emergency/Event.vue': () => import('@/views/emergency/Event.vue'),
   'views/inspection/Task.vue': () => import('@/views/inspection/Task.vue'),
   'views/repair/OrderList.vue': () => import('@/views/repair/OrderList.vue'),
+  'views/repair/RepairStatistics.vue': () => import('@/views/repair/RepairStatistics.vue'),
   'views/drill/Event.vue': () => import('@/views/drill/Event.vue'),
   'views/statistics/Report.vue': () => import('@/views/statistics/Report.vue'),
   'views/system/User.vue': () => import('@/views/system/User.vue'),

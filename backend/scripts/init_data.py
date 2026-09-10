@@ -64,9 +64,10 @@ MENU_LEVEL1 = [
     {"perm_code": "linkage:plan",      "perm_name": "联动预案",   "perm_type": "menu", "route_path": "/linkage/plan",      "component": "views/linkage/Plan.vue",         "icon": "Link",      "sort_order": 4},
     {"perm_code": "emergency:event",   "perm_name": "应急处置",   "perm_type": "menu", "route_path": "/emergency/event",   "component": "views/emergency/Event.vue",      "icon": "FirstAidKit", "sort_order": 5},
     {"perm_code": "inspection:task",   "perm_name": "巡检任务",   "perm_type": "menu", "route_path": "/inspection/task",   "component": "views/inspection/Task.vue",      "icon": "Calendar",  "sort_order": 6},
-    {"perm_code": "drill:event",       "perm_name": "消防演练",   "perm_type": "menu", "route_path": "/drill/event",       "component": "views/drill/Event.vue",          "icon": "Fire",      "sort_order": 7},
-    {"perm_code": "statistics:report", "perm_name": "统计报表",   "perm_type": "menu", "route_path": "/statistics/report", "component": "views/statistics/Report.vue",    "icon": "Trend",     "sort_order": 8},
-    {"perm_code": "system:management", "perm_name": "系统管理",   "perm_type": "menu", "route_path": "/system",            "component": "Layout",                         "icon": "Setting",   "sort_order": 9},
+    {"perm_code": "repair:order",     "perm_name": "维修工单",   "perm_type": "menu", "route_path": "/repair/order",     "component": "views/repair/OrderList.vue",   "icon": "Tools",       "sort_order": 7},
+    {"perm_code": "drill:event",       "perm_name": "消防演练",   "perm_type": "menu", "route_path": "/drill/event",       "component": "views/drill/Event.vue",          "icon": "Fire",      "sort_order": 8},
+    {"perm_code": "statistics:report", "perm_name": "统计报表",   "perm_type": "menu", "route_path": "/statistics/report", "component": "views/statistics/Report.vue",    "icon": "Trend",     "sort_order": 9},
+    {"perm_code": "system:management", "perm_name": "系统管理",   "perm_type": "menu", "route_path": "/system",            "component": "Layout",                         "icon": "Setting",   "sort_order": 10},
 ]
 
 # 系统管理子菜单
@@ -118,6 +119,12 @@ BUTTON_PERMS = [
     {"perm_code": "inspection:stat",      "perm_name": "巡检统计",   "perm_type": "button", "parent_code": "inspection:task"},
     # 消防演练
     {"perm_code": "drill:full", "perm_name": "演练全流程", "perm_type": "button", "parent_code": "drill:event"},
+    # 维修工单
+    {"perm_code": "repair:view",    "perm_name": "查看工单", "perm_type": "button", "parent_code": "repair:order"},
+    {"perm_code": "repair:create",  "perm_name": "创建工单", "perm_type": "button", "parent_code": "repair:order"},
+    {"perm_code": "repair:assign",  "perm_name": "派单",     "perm_type": "button", "parent_code": "repair:order"},
+    {"perm_code": "repair:repair",  "perm_name": "维修填报", "perm_type": "button", "parent_code": "repair:order"},
+    {"perm_code": "repair:accept",  "perm_name": "验收",     "perm_type": "button", "parent_code": "repair:order"},
     # 统计报表
     {"perm_code": "statistics:partial", "perm_name": "部分报表", "perm_type": "button", "parent_code": "statistics:report"},
     {"perm_code": "statistics:full",    "perm_name": "全部报表", "perm_type": "button", "parent_code": "statistics:report"},
@@ -143,10 +150,12 @@ ROLE_PERM_MAP = {
     "duty_officer": [
         # 菜单
         "monitor:dashboard", "alarm:center", "device:archive", "statistics:report",
+        "repair:order",
         # 按钮
         "monitor:view", "monitor:confirm",
         "alarm:view", "alarm:confirm", "alarm:silence", "alarm:reset", "alarm:handle",
         "device:view",
+        "repair:view", "repair:create",
         "statistics:partial",
         # 联动预案（值班员只能查看和执行）
         "linkage:view", "linkage:execute",
@@ -155,11 +164,12 @@ ROLE_PERM_MAP = {
     ],
     "maintainer": [
         # 菜单
-        "device:archive", "inspection:task", "statistics:report",
+        "device:archive", "inspection:task", "repair:order", "statistics:report",
         # 按钮
         "device:view", "device:repair",
         "inspection:execute",  # 仅可执行巡检，不可管理计划
         "inspection:stat",     # 可查看统计
+        "repair:view", "repair:create", "repair:repair",
         "statistics:partial",
     ],
     "chief": [

@@ -20,6 +20,10 @@ import {
   completeRepairOrder,
   acceptRepairOrder,
   returnRepairOrder,
+  getRepairOverview,
+  getRepairerWorkload,
+  getFaultDistribution,
+  getTop10FaultDevices,
 } from '../repair'
 
 const requestMock = request
@@ -98,6 +102,42 @@ describe('api/repair.js', () => {
       url: '/repair-orders/1/return',
       method: 'put',
       data: payload,
+    })
+  })
+
+  it('getRepairOverview 调用 GET /repair-statistics/overview', async () => {
+    requestMock.mockResolvedValue({ data: { total_orders: 10, avg_repair_hours: 2.5 } })
+    await getRepairOverview()
+    expect(requestMock).toHaveBeenCalledWith({
+      url: '/repair-statistics/overview',
+      method: 'get',
+    })
+  })
+
+  it('getRepairerWorkload 调用 GET /repair-statistics/by-repairer', async () => {
+    requestMock.mockResolvedValue({ data: { items: [] } })
+    await getRepairerWorkload()
+    expect(requestMock).toHaveBeenCalledWith({
+      url: '/repair-statistics/by-repairer',
+      method: 'get',
+    })
+  })
+
+  it('getFaultDistribution 调用 GET /repair-statistics/fault-types', async () => {
+    requestMock.mockResolvedValue({ data: { items: [] } })
+    await getFaultDistribution()
+    expect(requestMock).toHaveBeenCalledWith({
+      url: '/repair-statistics/fault-types',
+      method: 'get',
+    })
+  })
+
+  it('getTop10FaultDevices 调用 GET /repair-statistics/top10-devices', async () => {
+    requestMock.mockResolvedValue({ data: { items: [] } })
+    await getTop10FaultDevices()
+    expect(requestMock).toHaveBeenCalledWith({
+      url: '/repair-statistics/top10-devices',
+      method: 'get',
     })
   })
 })

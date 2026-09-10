@@ -413,3 +413,55 @@ async def return_repair_order(
         repairer_name=db_obj.repairer.real_name if db_obj.repairer else None,
         acceptor_name=db_obj.acceptor.real_name if db_obj.acceptor else None,
     )
+
+
+# ==================== 统计接口 ====================
+
+@router.get("/repair-statistics/overview", summary="维修概览统计")
+async def get_repair_overview(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """平均维修时长 + 状态分布"""
+    crud = RepairOrderCRUD(db)
+    avg_hours = await crud.get_avg_repair_duration()
+    status_dist = await crud.get_status_distribution()
+    total = sum(item["count"] for item in status_dist)
+    return {
+        "avg_repair_hours": avg_hours,
+        "total_orders": total,
+        "status_distribution": status_dist,
+    }
+
+
+@router.get("/repair-statistics/by-repairer", response_model=WorkloadResponse, summary="维修人员工作量")
+async def get_repairer_workload(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """维修人员工作量统计"""
+    crud = RepairOrderCRUD(db)
+    items = await crud.get_workload_by_repairer()
+    return WorkloadResponse(items=items)
+
+
+@router.get("/repair-statistics/fault-types", response_model=FaultDistributionResponse, summary="故障类型分布")
+async def get_fault_distribution(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """故障类型分布（按设备类型分组）"""
+    crud = RepairOrderCRUD(db)
+    items = await crud.get_fault_type_distribution()
+    return FaultDistributionResponse(items=items)
+
+
+@router.get("/repair-statistics/top10-devices", response_model=Top10FaultDevicesResponse, summary="故障设备TOP10")
+async def get_top10_fault_devices(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """故障设备 TOP10 统计"""
+    crud = RepairOrderCRUD(db)
+    items = await crud.get_top10_fault_devices()
+    return Top10FaultDevicesResponse(items=items)

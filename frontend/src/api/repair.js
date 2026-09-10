@@ -63,3 +63,37 @@ export function returnRepairOrder(id, data) {
     data,
   })
 }
+
+// ==================== 统计接口 ====================
+
+// 维修概览统计
+export function getRepairOverview() {
+  return request({
+    url: '/repair-statistics/overview',
+    method: 'get',
+  })
+}
+
+// 维修人员工作量
+export function getRepairerWorkload() {
+  return request({
+    url: '/repair-statistics/by-repairer',
+    method: 'get',
+  })
+}
+
+// 故障类型分布
+export function getFaultDistribution() {
+  return request({
+    url: '/repair-statistics/fault-types',
+    method: 'get',
+  })
+}
+
+// 故障设备TOP10
+export function getTop10FaultDevices() {
+  return request({
+    url: '/repair-statistics/top10-devices',
+    method: 'get',
+  })
+}
