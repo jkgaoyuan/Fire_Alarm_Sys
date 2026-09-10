@@ -11,17 +11,270 @@
   所有 Dockerfile 必须内置大陆镜像源替换（sed 修改 sources.list / 配置 registry），确保无外部依赖即可构建。默认使用阿里云/清华源，多阶段构建每个阶段都要处理。
 
   ---
-
+  
   ## 引用规范（执行任务前必读）
-
-  - **生成测试用例前**：先读取 `./testing-guidelines.md`，
-    遵循其中的设计方法、优先级定义、ID 命名体系和前后端代码模式。
-    该文件另含「记录归属」表、第六节断言陷阱清单（9 条）与「完成判据」；**可复用的测试侧假设一律追加进该文件，
-    不要只写在某一次的测试报告里**（P2-001 已于 2026-09-09 补齐）。
-  - **开始业务模块开发前**：先读取 `.claude/decisions.md`。其中 DEC-004（业务表统一加 `created_by`）
-    与 DEC-005（新页面须登记 `viewComponents` 映射表）对 3.2 及后续所有模块均有强制约束，
-    违反会分别导致数据权限失效、菜单点击白屏。
-  - **归档进度前**：遵循本文件上方的「归档触发条件」与「执行步骤」。
+  
+  ### 核心引用文件（优先级从高到低）
+  
+  1. **生成测试用例前**：先读取 `./testing-guidelines.md`
+     - 遵循设计方法、优先级定义、ID 命名体系
+     - 可复用的测试侧假设追加到该文件（P2-001 已补齐）
+  
+  2. **开始业务模块开发前**：先读取 `.claude/decisions.md`
+     - DEC-004: 业务表统一加 `created_by`
+     - DEC-005: 新页面须登记 `viewComponents` 映射表
+  
+  3. **前后端 API 集成时**：先阅读 `docs/plan/API_RESPONSE_FORMAT_SPECIFICATION.md`
+     - 统一响应格式约定 `{code, message, data, timestamp}`
+     - 避免格式不一致导致的解析错误（第 3.4 章节教训）
+  
+  4. **需要查询项目架构或技术细节时**：查阅记忆系统
+     - 数据库 Schema: `project_info > project_architecture > Fire Alarm System permission database schema conventions`
+     - 环境配置：`project_info > project_environment_configuration`
+     - 技术栈：`project_info > project_tech_stack`
+  
+  ---
+  
+  ### 🎨 AI 协作协议：API 开发与数据交互约束
+  
+  #### **一、后端 API 开发约束**
+  
+  **1. 所有 API 必须返回统一响应格式**
+  
+  ```json
+  {
+    "code": 200,
+    "message": "success",
+    "data": {
+      "items": [],
+      "total": 0,
+      "page": 1,
+      "page_size": 10
+    },
+    "timestamp": 1789015029
+  }
+  ```
+  
+  ✅ **正确示例**:
+  ```python
+  @router.get(
+      "",
+      response_model=Response[LinkagePlanPagination],
+      summary="获取预案列表"
+  )
+  async def get_linkage_plans(...):
+      return Response(
+          code=200,
+          message="success",
+          data=LinkagePlanPagination(items=[], total=0, page=1, page_size=10)
+      )
+  ```
+  
+  ❌ **错误示例**（禁止）:
+  ```python
+  @router.get("", response_model=LinkagePlanPagination)
+  async def get_linkage_plans(...):
+      return LinkagePlanPagination(items=[], total=0)  # 缺少包装层
+  ```
+  
+  **2. SQLAlchemy 2.0 规范**
+  
+  ```python
+  # ✅ 正确的 count 查询
+  from sqlalchemy import func
+  count_stmt = select(func.count()).select_from(stmt.subquery())
+  total = (await db.execute(count_stmt)).scalar_one_or_none()
+  
+  # ❌ 错误的 count 查询（Subquery 无 count 方法）
+  count_stmt = select(stmt.subquery().count())  # AttributeError!
+  ```
+  
+  **3. Router Prefix 配置最佳实践**
+  
+  ```python
+  # 在 app/api/v1/linkage_plans.py 中
+  router = APIRouter(tags=["Linkage Plans"])  # ⭐ 不要在这里加 prefix
+  
+  # 在 app/api/v1/__init__.py 中
+  router.include_router(linkage_plans.router, prefix="/linkage-plans", tags=["Linkage Plans"])
+  # ⭐ prefix 只应在聚合文件中添加
+  ```
+  
+  **验证方式**:
+  ```bash
+  # 检查 OpenAPI schema 是否有重复路径
+  curl http://localhost:8000/openapi.json | jq '.paths[] | select(test("linkage"))'
+  # ✅ 应该看到：/api/v1/linkage-plans
+  # ❌ 不应该看到：/api/v1/linkage-plans/linkage-plans
+  ```
+  
+  **4. 权限验证配置**
+  
+  ```python
+  from app.core.dependencies import require_permission, get_current_active_user
+  
+  @router.get("")
+  async def endpoint(...,
+      user: Annotated[User, Depends(get_current_active_user)],
+      _: User = Depends(require_permission("linkage:view"))  # ⭐ 明确指定权限码
+  ):
+      pass
+  ```
+  
+  **常见权限码**: 
+  - `linkage:view` / `linkage:create` / `linkage:update` / `linkage:delete`
+  - `device:view` / `device:create` / `device:update`
+  - `emergency:view` / `emergency:manage`
+  
+  ---
+  
+  #### **二、前端组件开发约束**
+  
+  **1. 统一的响应处理模式**
+  
+  ```javascript
+  // ✅ 正确模式
+  const res = await LinkageApi.getLinkagePlans(params)
+  if (res.code === 200 && res.data) {
+    plans.value = res.data.items || []
+    pagination.total = res.data.total || 0
+  } else {
+    ElMessage.error(res.message || '获取列表失败')
+  }
+  
+  // ❌ 错误模式（混用不同格式）
+  if (res && Array.isArray(res.items)) {  // 假设 API 返回裸数据对象
+    plans.value = res.items  // 违反统一格式约定
+  }
+  ```
+  
+  **2. API 调用封装**
+  
+  ```javascript
+  // src/api/linkage.js
+  export function getLinkagePlans(params) {
+    return request({
+      url: '/linkage-plans',  // 不带 /api/v1 前缀
+      method: 'get',
+      params,
+    })
+  }
+  ```
+  
+  **3. 加载状态与错误处理**
+  
+  ```vue
+  <script setup>
+  const loading = ref(false)
+  
+  async function loadPlans() {
+    loading.value = true
+    try {
+      const res = await apiCall()
+      if (res.code === 200) {
+        // 成功处理
+      } else {
+        ElMessage.error(res.message)
+      }
+    } catch (error) {
+      console.error('加载失败:', error)
+      ElMessage.error(error.message || '操作失败')
+    } finally {
+      loading.value = false
+    }
+  }
+  </script>
+  ```
+  
+  ---
+  
+  #### **三、数据格式一致性检查清单**
+  
+  **代码审查时必须确认**:
+  
+  **后端审查项**:
+  - [ ] 是否使用了统一的 `Response` 包装类？
+  - [ ] 所有 endpoint 是否返回 `{code, message, data}` 格式？
+  - [ ] 分页 API 包含 `total`, `page`, `page_size`？
+  - [ ] SQL count 语句符合 SQLAlchemy 2.0 规范？
+  - [ ] Router prefix 没有重复（如 `/linkage-plans/linkage-plans`）？
+  - [ ] 权限验证是否正确配置？
+  
+  **前端审查项**:
+  - [ ] 是否检查了 `res.code === 200`？
+  - [ ] 是否通过 `res.data.items` 访问数据？
+  - [ ] 是否在 `catch` 块中捕获错误？
+  - [ ] 是否有加载状态指示？
+  - [ ] 表单提交后是否刷新列表？
+  
+  **API 路由审查项**:
+  - [ ] OpenAPI Schema 是否正确生成？
+  - [ ] 路径是否有重复？
+  - [ ] Tags 是否一致？
+  
+  ---
+  
+  #### **四、向 AI 描述需求的 Prompt 模板**
+  
+  当你需要 AI 帮助开发新功能时，使用以下模板：
+  
+  ```
+  请帮我实现 XXXX 功能，要求：
+  
+  1. **后端 API 约束**:
+     - 使用统一的 `Response` 包装器返回 `{code, message, data}` 格式
+     - 添加权限验证：`xxx:view` / `xxx:create`
+     - 如果是列表接口，支持分页参数 `page`, `page_size`
+     - SQLAlchemy 2.0 规范：count 查询用 `select(func.count()).select_from(stmt.subquery())`
+     - Router prefix 只在 `__init__.py` 中添加，不要在 router 文件中重复
+  
+  2. **前端约束**:
+     - 从 `src/api/xxx.js` 导入 API 方法
+     - 检查 `res.code === 200` 后再处理数据
+     - 通过 `res.data.items` 访问列表数据
+     - 添加 loading 状态和错误提示
+     - 表单提交后刷新列表
+  
+  3. **数据格式约定**:
+     - 响应格式：`{code: 200, message: "success", data: {items: [], total: 0}, timestamp: ...}`
+     - 不要直接返回业务对象（如 `return ItemList(...)`），要包装成 `Response(ItemList(...))`
+  
+  4. **审查要点**:
+     - 检查 path 是否有重复（如 `/xxx/xxx`）
+     - 检查权限码是否正确
+     - 检查 SQLAlchemy count 语法
+  ```
+  
+  ---
+  
+  #### **五、已知问题与经验教训**
+  
+  **教训 1**: API 响应格式不一致导致前端解析失败
+  - **场景**: 3.4 联动预案模块的后端直接返回业务对象
+  - **现象**: 前端弹出"获取预案列表失败"，但 API 实际返回 200
+  - **根因**: 后端返回 `{items, total}`，前端期望 `{code: 200, data: {...}}`
+  - **修复**: 修改前端检查逻辑 `if (res && Array.isArray(res.items))`
+  - **预防**: 所有新增 API 必须使用统一响应包装器
+  
+  **教训 2**: Subquery 对象无 count() 方法
+  - **场景**: SQLAlchemy 2.0 分页查询中的总数统计
+  - **现象**: `AttributeError: 'Subquery' object has no attribute 'count'`
+  - **修复**: 改用 `select(func.count()).select_from(stmt.subquery())`
+  - **预防**: 使用 SQLAlchemy 2.0 标准写法，参考官方文档
+  
+  **教训 3**: Router prefix 嵌套导致路径重复
+  - **场景**: `linkage_plans.py` 和 `__init__.py` 都添加了 `/linkage-plans`
+  - **现象**: OpenAPI Schema 显示 `/api/v1/linkage-plans/linkage-plans`
+  - **修复**: 移除 `linkage_plans.py` 中的 prefix，只在 `__init__.py` 保留
+  - **预防**: Router 定义中不设置 prefix，只在聚合文件中添加
+  
+  **教训 4**: 后端代码修改后需重启服务才能生效
+  - **场景**: 移除了权限检查后仍然报 403
+  - **原因**: uvicorn 的热重载没有生效（可能是缓存问题）
+  - **修复**: 停止并重新启动 uvicorn 进程
+  - **预防**: 修改权限、路由等关键代码后手动重启服务验证
+  
+  ---
  
   ---
 

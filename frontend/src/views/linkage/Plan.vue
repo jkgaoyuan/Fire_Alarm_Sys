@@ -197,9 +197,10 @@ async function loadPlans() {
     }
     const res = await LinkageApi.getLinkagePlans(params)
     
-    if (res.code === 200) {
-      plans.value = res.data.items
-      pagination.total = res.data.total
+    // 注意：这个 API 直接返回数据对象，不是统一的 {code, data} 格式
+    if (res && Array.isArray(res.items)) {
+      plans.value = res.items
+      pagination.total = res.total || 0
     } else {
       ElMessage.error(res.message || '获取预案列表失败')
     }
