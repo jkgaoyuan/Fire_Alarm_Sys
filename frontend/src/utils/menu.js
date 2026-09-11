@@ -40,11 +40,16 @@ export function generateRoutesFromMenus(menus, modules = viewModules) {
   const routes = []
 
   function traverse(nodes) {
+    if (!Array.isArray(nodes)) return []
+    
+    const currentBatch = []
+    
     for (const node of nodes) {
       // Skip parent menus (Layout) - just expand their children
       if (node.component === 'Layout') {
-        if (node.children && node.children.length > 0) {
-          traverse(node.children)
+        if (node.children && Array.isArray(node.children)) {
+          const childRoutes = traverse(node.children)
+          currentBatch.push(...childRoutes)
         }
         continue
       }
@@ -55,30 +60,34 @@ export function generateRoutesFromMenus(menus, modules = viewModules) {
       const routeName = node.perm_code || node.name || routePath
 
       const route = {
-        path: routePath,  // Include leading slash for Vue Router
+        path: routePath,
         name: routeName,
         component: node.component
           ? (modules[`@/${node.component}`] || viewComponents[node.component] || undefined)
           : undefined,
         meta: {
-          title: node.perm_name || node.title,
-          icon: node.icon,
-          activeMenu: routePath, // Use normalized path for active menu highlighting
+          title: node.perm_name || node.title || node?.meta?.title,
+          icon: node.icon || node?.meta?.icon,
+          activeMenu: routePath,
         },
         children: [],
       }
 
-      if (node.children && node.children.length > 0) {
-        route.children = traverse(node.children)
+      // ✅ Key fix: Always process children if they exist
+      if (node.children && Array.isArray(node.children)) {
+        const childRoutes = traverse(node.children)
+        if (childRoutes.length > 0) {
+          route.children = childRoutes
+        }
       }
 
-      routes.push(route)
+      currentBatch.push(route)
     }
-    return routes
+    
+    return currentBatch
   }
 
-  traverse(menus)
-  return routes
+  return traverse(menus)
 }
 
 /**
@@ -88,26 +97,29 @@ export function generateRoutesFromMenus(menus, modules = viewModules) {
  * @returns {Array} 归一化后的菜单树
  */
 export function normalizeMenuForDisplay(menus) {
+  // ✅ 关键修复：返回全新的数组，避免修改原对象
   const normalized = []
   
   function traverse(nodes) {
+    if (!Array.isArray(nodes)) return []
+    
+    const result = []
     for (const node of nodes) {
-      // 复制节点并添加 clone 以避免修改原对象
-      const clonedNode = { ...node }
+      // ✅ 创建深拷贝以避免修改原对象
+      const clonedNode = { ...node, children: [] }
+      
+      // ✅ 为子节点分配新的数组，防止循环引用
+      const childResults = traverse(node.children || [])
+      clonedNode.children = childResults
       
       // 确保 path 包含前导斜杠
       if (clonedNode.path && !clonedNode.path.startsWith('/')) {
         clonedNode.path = '/' + clonedNode.path
       }
       
-      // 递归处理子菜单
-      if (clonedNode.children && clonedNode.children.length > 0) {
-        clonedNode.children = traverse(clonedNode.children)
-      }
-      
-      normalized.push(clonedNode)
+      result.push(clonedNode)
     }
-    return normalized
+    return result
   }
   
   return traverse(menus)

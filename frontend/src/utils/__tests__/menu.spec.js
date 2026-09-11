@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { generateRoutesFromMenus, collectPaths } from '../menu'
+import { generateRoutesFromMenus, collectPaths, normalizeMenuForDisplay } from '../menu'
 
 // Mock Vite 模块映射（测试中无需真实 import）
 const mockModules = {
@@ -9,7 +9,79 @@ const mockModules = {
   '@/views/Level3.vue': () => Promise.resolve({ default: {} }),
 }
 
+const nestedMenus = [
+  {
+    path: '/system', name: 'system', component: 'Layout',
+    meta: { title: 'System', icon: 'Setting' },
+    children: [{
+      path: '/system/user', name: 'system:user', component: 'views/system/User.vue',
+      meta: { title: 'Users', icon: 'User' }, children: [],
+    }],
+  },
+  {
+    path: '/statistics/report', name: 'statistics:report', component: 'views/statistics/Report.vue',
+    meta: { title: 'Reports', icon: 'Document' },
+    children: [{
+      path: '/statistics/device-status', name: 'statistics:device',
+      component: 'views/statistics/DeviceStatus.vue',
+      meta: { title: 'Devices', icon: 'Monitor' }, children: [],
+    }],
+  },
+]
+
+describe('normalizeMenuForDisplay', () => {
+  it('keeps nested backend menus acyclic with isolated children', () => {
+    const original = JSON.stringify(nestedMenus)
+    const menus = normalizeMenuForDisplay(nestedMenus)
+    expect(() => JSON.stringify(menus)).not.toThrow()
+    expect(menus).toHaveLength(2)
+    expect(menus[0].children).not.toBe(menus)
+    expect(menus[0].children.map(node => node.path)).toEqual(['/system/user'])
+    expect(menus[1].children.map(node => node.path)).toEqual(['/statistics/device-status'])
+    expect(JSON.stringify(nestedMenus)).toBe(original)
+  })
+
+  it('normalizes paths at every level without changing the input', () => {
+    const input = [{ path: 'system', children: [{ path: 'system/user' }] }]
+    const menus = normalizeMenuForDisplay(input)
+    expect(() => JSON.stringify(menus)).not.toThrow()
+    expect(menus[0].path).toBe('/system')
+    expect(menus[0].children[0].path).toBe('/system/user')
+    expect(input[0].children[0].path).toBe('system/user')
+    expect(normalizeMenuForDisplay([])).toEqual([])
+  })
+})
+
 describe('generateRoutesFromMenus', () => {
+  it('keeps non-Layout children acyclic and preserves backend metadata', () => {
+    const original = JSON.stringify(nestedMenus)
+    const routes = generateRoutesFromMenus(nestedMenus, mockModules)
+    expect(() => JSON.stringify(routes)).not.toThrow()
+    // Statistics/report has a child, so only parent + leaf routes are generated
+    expect(routes.map(route => route.path)).toEqual(['/system/user', '/statistics/report'])
+    
+    expect(routes.length).toBe(2)
+    expect(routes[0].name).toBe('system:user')
+    expect(routes[1].name).toBe('statistics:report')
+    expect(routes[1].children).toBeDefined()
+    expect(routes[1].children.length).toBe(1)
+    expect(routes[1].children[0].path).toBe('/statistics/device-status')
+    expect(routes[1].children[0].name).toBe('statistics:device')
+    expect(routes[1].meta.title).toBe('Reports')
+    expect(routes[1].meta.icon).toBe('Document')
+    expect(JSON.stringify(nestedMenus)).toBe(original)
+  })
+
+  it('keeps componentless nested groups acyclic', () => {
+    const routes = generateRoutesFromMenus([{
+      path: '/group', children: [{ path: '/group/leaf' }],
+    }], mockModules)
+    expect(() => JSON.stringify(routes)).not.toThrow()
+    expect(routes).toHaveLength(1) // Only /group leaf is generated
+    expect(routes[0].path).toBe('/group')
+    expect(routes[0].children.length).toBe(1)
+    expect(routes[0].children[0].path).toBe('/group/leaf')
+  })
   it('应将叶子菜单生成为路由', () => {
     const menus = [
       {

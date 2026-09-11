@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { usePermissionStore } from '@/stores/permission'
 
@@ -9,6 +9,16 @@ vi.mock('@/utils/auth', () => ({
 vi.mock('@/api/user', () => ({
   getMenus: vi.fn(),
   getPermissions: vi.fn(),
+}))
+
+const { logout } = vi.hoisted(() => ({ logout: vi.fn().mockResolvedValue() }))
+vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ logout }) }))
+vi.mock('@/router/staticRoutes', () => ({
+  staticRoutes: [
+    { path: '/login', name: 'Login', component: { template: '<div>Login</div>' } },
+    { path: '/403', name: 'Forbidden', component: { template: '<div>Forbidden</div>' } },
+    { path: '/404', name: 'NotFound', component: { template: '<div>Not found</div>' } },
+  ],
 }))
 
 // mock menu.js 中的 glob，避免测试环境找不到组件模块
@@ -55,11 +65,123 @@ function addTestRoute(path, name) {
   })
 }
 
+const dashboardMenu = {
+  path: '/monitor/dashboard', name: 'monitor:dashboard',
+  component: 'views/monitor/Dashboard.vue', meta: { title: 'Dashboard' },
+}
+
+function deferred() {
+  let resolve
+  const promise = new Promise(done => { resolve = done })
+  return { promise, resolve }
+}
+
 describe('router guard', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    getMenus.mockReset()
+    getPermissions.mockReset()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
     resetRouter()
+    await router.replace('/login')
+  })
+
+  afterEach(() => vi.restoreAllMocks())
+
+  it('waits for slow menus and permissions before entering the dashboard', async () => {
+    getToken.mockReturnValue('valid-token')
+    const menus = deferred()
+    const permissions = deferred()
+    getMenus.mockReturnValue(menus.promise)
+    getPermissions.mockReturnValue(permissions.promise)
+    let finished = false
+    const navigation = router.replace('/monitor/dashboard').then(() => { finished = true })
+    await vi.waitFor(() => expect(getMenus).toHaveBeenCalledOnce())
+    const whileMenusPending = {
+      path: router.currentRoute.value.path, loaded: usePermissionStore().isRoutesLoaded, finished,
+    }
+    menus.resolve({ data: [dashboardMenu] })
+    await vi.waitFor(() => expect(getPermissions).toHaveBeenCalledOnce())
+    const whilePermissionsPending = {
+      path: router.currentRoute.value.path, loaded: usePermissionStore().isRoutesLoaded, finished,
+    }
+    permissions.resolve({ data: ['monitor:dashboard'] })
+    await navigation
+    expect(whileMenusPending).toEqual({ path: '/login', loaded: false, finished: false })
+    expect(whilePermissionsPending).toEqual({ path: '/login', loaded: false, finished: false })
+    expect(router.currentRoute.value.path).toBe('/monitor/dashboard')
+    expect(usePermissionStore().isRoutesLoaded).toBe(true)
+    expect(logout).not.toHaveBeenCalled()
+  })
+
+  it('preserves the requested dynamic URL including query and hash', async () => {
+    getToken.mockReturnValue('valid-token')
+    getMenus.mockResolvedValue({ data: [{
+      path: '/system/user', name: 'system:user', component: 'views/system/User.vue',
+    }] })
+    getPermissions.mockResolvedValue({ data: ['system:user'] })
+    await router.replace('/system/user?page=2#details')
+    expect(router.currentRoute.value.fullPath).toBe('/system/user?page=2#details')
+    expect(router.currentRoute.value.matched.at(-1).name).toBe('system:user')
+    expect(getMenus).toHaveBeenCalledOnce()
+  })
+
+  it('does not log out on initialization failure and allows a retry', async () => {
+    getToken.mockReturnValue('valid-token')
+    const failure = new Error('Permission service unavailable')
+    getMenus.mockResolvedValue({ data: [dashboardMenu] })
+    getPermissions.mockRejectedValueOnce(failure)
+    const result = await router.replace('/monitor/dashboard').then(() => null, error => error)
+    expect(result).toBe(failure)
+    expect(router.currentRoute.value.path).toBe('/login')
+    expect(logout).not.toHaveBeenCalled()
+    expect(getToken()).toBe('valid-token')
+    expect(usePermissionStore().isRoutesLoaded).toBe(false)
+    getPermissions.mockResolvedValue({ data: ['monitor:dashboard'] })
+    await router.replace('/monitor/dashboard')
+    expect(router.currentRoute.value.path).toBe('/monitor/dashboard')
+  })
+
+  it('keeps a genuinely unauthorized user on 403 without logging out', async () => {
+    getToken.mockReturnValue('valid-token')
+    getMenus.mockResolvedValue({ data: [] })
+    getPermissions.mockResolvedValue({ data: [] })
+    await router.replace('/monitor/dashboard')
+    expect(router.currentRoute.value.path).toBe('/403')
+    expect(usePermissionStore().isRoutesLoaded).toBe(true)
+    expect(logout).not.toHaveBeenCalled()
+  })
+
+  it('returns to login if the session expires during initialization', async () => {
+    getToken.mockReturnValue('valid-token')
+    const menus = deferred()
+    getMenus.mockReturnValue(menus.promise)
+    getPermissions.mockResolvedValue({ data: [] })
+    const navigation = router.replace('/monitor/dashboard')
+    await vi.waitFor(() => expect(getMenus).toHaveBeenCalledOnce())
+    getToken.mockReturnValue(null)
+    menus.resolve({ data: [dashboardMenu] })
+    await navigation
+    expect(router.currentRoute.value.path).toBe('/login')
+    expect(usePermissionStore().isRoutesLoaded).toBe(false)
+  })
+
+  it('uses one initialization for concurrent navigations and keeps the latest target', async () => {
+    getToken.mockReturnValue('valid-token')
+    const menus = deferred()
+    getMenus.mockReturnValue(menus.promise)
+    getPermissions.mockResolvedValue({ data: ['monitor:dashboard', 'system:user'] })
+    const first = router.replace('/monitor/dashboard')
+    await vi.waitFor(() => expect(getMenus).toHaveBeenCalledOnce())
+    const second = router.replace('/system/user?page=2')
+    menus.resolve({ data: [dashboardMenu, {
+      path: '/system/user', name: 'system:user', component: 'views/system/User.vue',
+    }] })
+    await Promise.all([first, second])
+    expect(router.currentRoute.value.fullPath).toBe('/system/user?page=2')
+    expect(getMenus).toHaveBeenCalledOnce()
+    expect(getPermissions).toHaveBeenCalledOnce()
   })
 
   it('白名单路由 /login 直接放行', async () => {

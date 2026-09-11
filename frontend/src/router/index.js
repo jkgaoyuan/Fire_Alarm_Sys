@@ -6,6 +6,29 @@ import { staticRoutes } from './staticRoutes'
 
 const whiteList = ['/login', '/403', '/404']
 
+// ✅ Initialize routes before any navigation (shared across all route guards)
+const initializeRoutes = (() => {
+  let initPromise = null
+  return async () => {
+    if (!initPromise) {
+      initPromise = (async () => {
+        const permStore = usePermissionStore()
+        if (!permStore.isRoutesLoaded) {
+          console.log('[Router Guard] Starting route initialization...')
+          try {
+            await permStore.generateRoutes()
+            console.log('[Router Guard] Routes initialized successfully')
+          } catch (err) {
+            console.error('[Router Guard] Route initialization failed:', err)
+            // Don't logout user on initialization failure
+          }
+        }
+      })()
+    }
+    return initPromise
+  }
+})()
+
 const router = createRouter({
   history: createWebHistory(),
   routes: staticRoutes,
@@ -16,8 +39,7 @@ const router = createRouter({
 
 // ✅ 完整修复的路由守卫（P0-005）
 // 使用非 async 模式，直接返回字符串或布尔值
-router.beforeEach((to, from) => {
-  // 日志：记录每次路由跳转
+router.beforeEach(async (to, from) => {
   console.log('[Router Guard] Navigation:', from.path, '->', to.path)
 
   // 白名单直接放行
@@ -34,32 +56,41 @@ router.beforeEach((to, from) => {
 
   const permStore = usePermissionStore()
 
-  // 菜单未加载时，先获取菜单并生成动态路由
+  // 如果路由未加载，等待初始化完成后再检查
   if (!permStore.isRoutesLoaded) {
+    console.log('[Router Guard] Routes not loaded, waiting for initialization...')
+    
     try {
-      console.log('[Router Guard] Routes not loaded, fetching menus...')
+      // Wait for initialization to complete
+      const init = initializeRoutes()
+      await init()
       
-      // ✅ 关键修复 1: 立即设置标志位，避免重复调用
-      permStore.isRoutesLoaded = true
+      // Re-check permission after routes are loaded
+      console.log('[Router Guard] Initialization complete, re-checking permission for:', to.path)
       
-      // ✅ 关键修复 2: 异步生成路由（不阻塞导航）
-      permStore.generateRoutes().catch(err => {
-        console.error('[Router Guard] Failed to load routes:', err)
-        const authStore = useAuthStore()
-        authStore.logout().then(() => {
-          console.log('[Router Guard] Redirecting to login due to error')
-          window.location.href = '/login'
-        })
-      })
+      // Now check permission again with full route list
+      if (to.path === '/') {
+        console.log('[Router Guard] Root path allowed')
+        return true
+      }
       
-      // ✅ 关键修复 3: 直接返回 true，让当前导航继续
-      // ❌ 不要在后面再次调用 next() 或返回重定向，会导致无限循环！
-      console.log('[Router Guard] Allowing initial navigation, routes loading in background')
-      return true
+      const hasPermission = permStore.flatMenuPaths.includes(to.path)
+      console.log('[Router Guard] Has permission:', hasPermission)
+      
+      if (hasPermission) {
+        console.log('[Router Guard] Permission granted')
+        return true
+      }
+      
+      console.log('[Router Guard] No permission, redirect to 403')
+      return '/403'
     } catch (err) {
-      console.error('[Router Guard] Critical error:', err)
+      console.error('[Router Guard] Initialization error:', err)
+      // On initialization failure, redirect to login for manual recovery
       const authStore = useAuthStore()
-      authStore.logout()
+      authStore.logout().then(() => {
+        console.log('[Router Guard] Logged out user due to initialization error')
+      })
       return '/login'
     }
   }

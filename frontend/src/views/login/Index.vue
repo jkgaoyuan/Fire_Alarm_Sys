@@ -114,8 +114,8 @@ async function handleLogin() {
       password: form.password,
     })
     ElMessage.success('登录成功')
-    // 直接跳转到监控大屏，避开路由守卫的复杂逻辑
-    router.replace('/monitor/dashboard')
+    // Router guard will automatically redirect to dashboard after routes are loaded
+    // No manual navigation needed - let the guard handle it
   } catch (err) {
     const code = err.code
     const data = err.data || {}
