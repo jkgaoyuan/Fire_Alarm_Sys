@@ -25,20 +25,23 @@ export const usePermissionStore = defineStore('permission', () => {
     const permRes = await getPermissions()
     permissions.value = permRes.data || []
 
-    // 3. 生成动态路由
+    // 3. 生成动态路由（只包含后端返回的菜单项）
     const routes = generateRoutesFromMenus(menus.value)
     dynamicRoutes.value = routes
 
-    // 4. 挂载到路由器
-    // 使用一个 layout 路由作为父级容器
-    const layoutRoute = {
-      path: '/',
-      name: 'LayoutRoot',
-      component: () => import('@/components/Layout.vue'),
-      redirect: menus.value[0]?.path || '/dashboard',
-      children: routes,
+    // 4. 检查是否已经有 Layout 根路由存在（来自静态路由）
+    const hasLayoutRoute = router.getRoutes().some(r => r.path === '/')
+    
+    if (!hasLayoutRoute) {
+      // 如果没有，则创建默认的 Layout
+      const layoutRoute = {
+        path: '/',
+        name: 'LayoutRoot',
+        component: () => import('@/components/Layout.vue'),
+        children: routes,
+      }
+      router.addRoute(layoutRoute)
     }
-    router.addRoute(layoutRoute)
 
     // 404 兜底（必须最后添加）
     router.addRoute({

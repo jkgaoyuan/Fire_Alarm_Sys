@@ -29,7 +29,7 @@
 
 <script setup>
 import { ref, watch } from 'vue'
-import { getInspectionTasks } from '@/API/inspection'
+import { getInspectionTasks } from '@/api/inspection'
 
 const props = defineProps({
   modelValue: Boolean,

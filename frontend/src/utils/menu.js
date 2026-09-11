@@ -41,7 +41,7 @@ export function generateRoutesFromMenus(menus, modules = viewModules) {
 
   function traverse(nodes) {
     for (const node of nodes) {
-      // 父菜单（component 为 Layout）不生成路由，只展开 children
+      // Skip parent menus (Layout) - just expand their children
       if (node.component === 'Layout') {
         if (node.children && node.children.length > 0) {
           traverse(node.children)
@@ -49,8 +49,14 @@ export function generateRoutesFromMenus(menus, modules = viewModules) {
         continue
       }
 
+      // Normalize path: remove leading slash if present
+      let routePath = node.route_path || node.path || ''
+      if (routePath.startsWith('/')) {
+        routePath = routePath.substring(1)
+      }
+
       const route = {
-        path: node.route_path || node.path,
+        path: routePath,
         name: node.perm_code || node.name,
         component: node.component
           ? (modules[`@/${node.component}`] || viewComponents[node.component] || undefined)

@@ -45,7 +45,7 @@
 <script setup>
 import { ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getInspectionRecords } from '@/API/inspection'
+import { getInspectionRecords } from '@/api/inspection'
 
 const props = defineProps({
   modelValue: Boolean,

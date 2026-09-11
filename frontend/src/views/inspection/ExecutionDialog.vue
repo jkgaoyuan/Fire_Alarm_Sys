@@ -97,7 +97,7 @@
 import { reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import { submitInspectionRecord } from '@/API/inspection'
+import { submitInspectionRecord } from '@/api/inspection'
 import { getDevices } from '@/api/device'
 import {
   deviceStatusLabel,

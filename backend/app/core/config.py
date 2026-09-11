@@ -62,8 +62,13 @@ class Settings(BaseSettings):
     # 部署（P2-008 多 worker）
     WORKERS: int = 1  # >1 时 entrypoint 以多进程启动，每个 worker 独立消费 Redis Stream
 
-    # CORS 配置（开发环境）
-    CORS_ORIGINS: list[str] = ["http://localhost:5173"]
+    # CORS 配置（开发环境和 Docker 环境）
+    CORS_ORIGINS: list[str] = [
+        "http://localhost:5173",  # Vite 开发服务器
+        "http://localhost",       # Docker nginx 反向代理
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1",
+    ]
 
     @property
     def database_url_async(self) -> str:

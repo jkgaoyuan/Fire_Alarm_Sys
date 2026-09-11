@@ -154,7 +154,7 @@ import PermissionButton from '@/components/PermissionButton.vue'
 import ExecutionDialog from './ExecutionDialog.vue'
 import RecordViewer from './RecordViewer.vue'
 import StatsDialog from './StatsDialog.vue'
-import { getInspectionTasks } from '@/API/inspection'
+import { getInspectionTasks } from '@/api/inspection'
 
 const loading = ref(false)
 const taskList = ref([])

@@ -113,10 +113,10 @@
 <script setup>
 import { reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { createInspectionPlan, updateInspectionPlan } from '@/API/inspection'
+import { createInspectionPlan, updateInspectionPlan } from '@/api/inspection'
 import { getOrganizationTree } from '@/api/organization'
 import { getDeviceTypes } from '@/api/device'
-import { getUsers } from '@/api/users' // 假设已有获取用户的 API
+import { getUsers } from '@/api/user' // 使用正确的 API
 
 const props = defineProps({
   modelValue: Boolean,

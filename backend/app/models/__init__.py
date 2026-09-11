@@ -5,6 +5,7 @@
 from app.models.alarm import Alarm
 from app.models.device import Device, DeviceStatusLog
 from app.models.device_type import DeviceType
+from app.models.drill import DrillEvent, DrillEvaluation
 from app.models.emergency import EmergencyEvent, EmergencyTimeline, Notification
 from app.models.inspection import (
     InspectionPlan,
@@ -36,6 +37,9 @@ __all__ = [
     "InspectionRecord",
     # 3.7 维修工单新增
     "RepairOrder",
+    # 3.8 消防演练新增
+    "DrillEvent",
+    "DrillEvaluation",
     # 3.9 统计报表新增
     "ReportExportTask",
 ]

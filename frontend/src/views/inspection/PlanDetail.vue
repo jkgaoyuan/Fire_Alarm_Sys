@@ -85,7 +85,7 @@
 <script setup>
 import { ref, reactive, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getInspectionPlanDetail, getInspectionTasks } from '@/API/inspection'
+import { getInspectionPlanDetail, getInspectionTasks } from '@/api/inspection'
 
 const props = defineProps({
   modelValue: Boolean,
