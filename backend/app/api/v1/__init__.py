@@ -21,6 +21,7 @@ from app.api.v1 import (
 from app.api.v1.emergency_events import router as emergency_router
 from app.api.v1.notifications import router as notification_router
 from app.api.v1 import inspection
+from app.api.v1 import drills
 
 router = APIRouter()
 
@@ -71,3 +72,13 @@ router.include_router(inspection.router, tags=["设备巡检"])
 
 # 3.7 维修工单管理路由
 router.include_router(repair.router, tags=["维修工单"])
+
+# 3.8 消防演练路由（路由自身已带 /drills 前缀）
+router.include_router(drills.router, tags=["消防演练"])
+
+# 3.9 统计报表路由
+from app.api.v1.statistics import router as statistics_router
+from app.api.v1.reports import router as reports_router
+
+router.include_router(statistics_router, prefix="/statistics", tags=["统计报表"])
+router.include_router(reports_router, prefix="/reports", tags=["报表导出"])

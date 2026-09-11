@@ -3,8 +3,10 @@ pytest 全局 fixtures
 """
 
 import fakeredis
+import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.db.redis import get_redis_pool
@@ -43,7 +45,7 @@ async def db_session(db_engine):
     try:
         yield session
     finally:
-        session.close()  # sync close, not await
+        await session.close()
 
 
 @pytest_asyncio.fixture
@@ -65,8 +67,7 @@ async def fake_redis():
 async def client(db_session, fake_redis):
     """HTTP 测试客户端（依赖注入覆盖）"""
     async def override_get_db():
-        async with db_session as s:
-            yield s
+        yield db_session
 
     async def override_get_redis():
         yield fake_redis
@@ -82,6 +83,7 @@ async def client(db_session, fake_redis):
 from app.core.security import create_access_token, get_password_hash
 from app.models.permission import Permission
 from app.models.user import Role, User
+from tests.statistics_helpers import auth_headers as statistics_auth_headers
 
 
 @pytest_asyncio.fixture
@@ -149,3 +151,115 @@ async def test_client_with_user(client, test_user, fake_redis):
     client.request = _authenticated_request
     yield client
     client.request = original_request
+
+
+# ==================== E2E 测试 Fixures ====================
+
+@pytest_asyncio.fixture
+async def auth_headers(db_session, test_user):
+    """
+    E2E 测试认证 headers（含 export 权限）
+    用于 test_statistics_e2e_integration.py
+    """
+    # 确保 test_user 有 statistics:view 和 statistics:export 权限
+    view_perm = (await db_session.execute(
+        select(Permission).where(Permission.perm_code == "statistics:view")
+    )).scalar_one_or_none()
+    if not view_perm:
+        view_perm = Permission(
+            perm_code="statistics:view",
+            perm_name="Statistical View",
+            perm_type="button"
+        )
+        db_session.add(view_perm)
+        await db_session.flush()
+    
+    export_perm = (await db_session.execute(
+        select(Permission).where(Permission.perm_code == "statistics:export")
+    )).scalar_one_or_none()
+    if not export_perm:
+        export_perm = Permission(
+            perm_code="statistics:export",
+            perm_name="Statistical Export",
+            perm_type="button"
+        )
+        db_session.add(export_perm)
+        await db_session.flush()
+    
+    # 将权限添加到 test_user 的角色中
+    for role in test_user.roles:
+        if view_perm not in role.permissions:
+            role.permissions.append(view_perm)
+        if export_perm not in role.permissions:
+            role.permissions.append(export_perm)
+    
+    await db_session.commit()
+    return statistics_auth_headers(test_user)
+
+
+@pytest_asyncio.fixture
+async def viewer_user(db_session):
+    """
+    E2E 测试用 viewer 用户（只有 statistics:view 权限）
+    """
+    from app.models.organization import Organization
+    
+    # 创建统计权限
+    view_perm = (await db_session.execute(
+        select(Permission).where(Permission.perm_code == "statistics:view")
+    )).scalar_one_or_none()
+    if not view_perm:
+        view_perm = Permission(
+            perm_code="statistics:view",
+            perm_name="Statistical View",
+            perm_type="button"
+        )
+        db_session.add(view_perm)
+        await db_session.flush()
+    
+    export_perm = (await db_session.execute(
+        select(Permission).where(Permission.perm_code == "statistics:export")
+    )).scalar_one_or_none()
+    if not export_perm:
+        export_perm = Permission(
+            perm_code="statistics:export",
+            perm_name="Statistical Export",
+            perm_type="button"
+        )
+        db_session.add(export_perm)
+        await db_session.flush()
+    
+    # 创建角色
+    role = Role(
+        role_code="viewer_role",
+        role_name="Viewer Role",
+        is_builtin=False
+    )
+    db_session.add(role)
+    await db_session.flush()
+    
+    # 只添加 view 权限
+    role.permissions.append(view_perm)
+    
+    # 创建用户
+    user = User(
+        username="viewer_e2e",
+        password_hash=get_password_hash("Test1234"),
+        real_name="E2E Viewer",
+        status="active",
+        data_scope="all"
+    )
+    user.roles.append(role)
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+    return user
+
+
+@pytest.fixture
+def viewer_auth_headers(viewer_user):
+    """
+    E2E 测试认证 headers（只有 view 权限）
+    用于 test_statistics_e2e.py
+    """
+    return statistics_auth_headers(viewer_user)

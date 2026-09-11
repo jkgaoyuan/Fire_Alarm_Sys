@@ -14,6 +14,7 @@ from app.models.inspection import (
 from app.models.organization import Organization
 from app.models.permission import Permission
 from app.models.repair import RepairOrder
+from app.models.report_export import ReportExportTask
 from app.models.user import LoginLog, Role, User
 
 __all__ = [
@@ -35,4 +36,6 @@ __all__ = [
     "InspectionRecord",
     # 3.7 维修工单新增
     "RepairOrder",
+    # 3.9 统计报表新增
+    "ReportExportTask",
 ]

@@ -76,6 +76,12 @@ MENU_LEVEL2 = [
     {"perm_code": "system:role", "perm_name": "角色管理", "perm_type": "menu", "route_path": "/system/role", "component": "views/system/Role.vue", "icon": "Role", "sort_order": 2, "parent_code": "system:management"},
     {"perm_code": "system:log", "perm_name": "登录日志", "perm_type": "menu", "route_path": "/system/login-log", "component": "views/system/LoginLog.vue", "icon": "Document", "sort_order": 3, "parent_code": "system:management"},
     {"perm_code": "system:org", "perm_name": "组织管理", "perm_type": "menu", "route_path": "/system/org", "component": "views/system/Org.vue", "icon": "OfficeBuilding", "sort_order": 4, "parent_code": "system:management"},
+    # 统计报表子菜单
+    {"perm_code": "statistics:device_status", "perm_name": "设备完好率", "perm_type": "menu", "route_path": "/statistics/device-status", "component": "views/statistics/DeviceStatus.vue", "icon": "PieChart", "sort_order": 1, "parent_code": "statistics:report"},
+    {"perm_code": "statistics:alarm_trend", "perm_name": "报警趋势", "perm_type": "menu", "route_path": "/statistics/alarm-trend", "component": "views/statistics/AlarmTrend.vue", "icon": "TrendCharts", "sort_order": 2, "parent_code": "statistics:report"},
+    {"perm_code": "statistics:fault_top10", "perm_name": "故障TOP10", "perm_type": "menu", "route_path": "/statistics/fault-top10", "component": "views/statistics/FaultTop10.vue", "icon": "Histogram", "sort_order": 3, "parent_code": "statistics:report"},
+    {"perm_code": "statistics:inspection", "perm_name": "巡检完成率", "perm_type": "menu", "route_path": "/statistics/inspection-completion", "component": "views/statistics/InspectionCompletion.vue", "icon": "DataLine", "sort_order": 4, "parent_code": "statistics:report"},
+    {"perm_code": "statistics:export_center", "perm_name": "导出中心", "perm_type": "menu", "route_path": "/statistics/export-center", "component": "views/statistics/ExportCenter.vue", "icon": "Download", "sort_order": 5, "parent_code": "statistics:report"},
 ]
 
 # 按钮/API 权限（parent_code 为关联的业务菜单）
@@ -117,8 +123,15 @@ BUTTON_PERMS = [
     {"perm_code": "inspection:delete",    "perm_name": "删除计划",   "perm_type": "button", "parent_code": "inspection:task"},
     {"perm_code": "inspection:execute",   "perm_name": "执行巡检",   "perm_type": "button", "parent_code": "inspection:task"},
     {"perm_code": "inspection:stat",      "perm_name": "巡检统计",   "perm_type": "button", "parent_code": "inspection:task"},
-    # 消防演练
-    {"perm_code": "drill:full", "perm_name": "演练全流程", "perm_type": "button", "parent_code": "drill:event"},
+    # 消防演练（3.8：拆分为 8 个细粒度权限码，与 drills.py 端点一一对应）
+    {"perm_code": "drill:view",     "perm_name": "查看演练",   "perm_type": "button", "parent_code": "drill:event"},
+    {"perm_code": "drill:create",   "perm_name": "新增计划",   "perm_type": "button", "parent_code": "drill:event"},
+    {"perm_code": "drill:update",   "perm_name": "编辑计划",   "perm_type": "button", "parent_code": "drill:event"},
+    {"perm_code": "drill:delete",   "perm_name": "删除计划",   "perm_type": "button", "parent_code": "drill:event"},
+    {"perm_code": "drill:execute",  "perm_name": "执行演练",   "perm_type": "button", "parent_code": "drill:event"},
+    {"perm_code": "drill:evaluate", "perm_name": "评估打分",   "perm_type": "button", "parent_code": "drill:event"},
+    {"perm_code": "drill:stat",     "perm_name": "演练统计",   "perm_type": "button", "parent_code": "drill:event"},
+    {"perm_code": "drill:export",   "perm_name": "导出报告",   "perm_type": "button", "parent_code": "drill:event"},
     # 维修工单
     {"perm_code": "repair:view",    "perm_name": "查看工单", "perm_type": "button", "parent_code": "repair:order"},
     {"perm_code": "repair:create",  "perm_name": "创建工单", "perm_type": "button", "parent_code": "repair:order"},
@@ -126,8 +139,8 @@ BUTTON_PERMS = [
     {"perm_code": "repair:repair",  "perm_name": "维修填报", "perm_type": "button", "parent_code": "repair:order"},
     {"perm_code": "repair:accept",  "perm_name": "验收",     "perm_type": "button", "parent_code": "repair:order"},
     # 统计报表
-    {"perm_code": "statistics:partial", "perm_name": "部分报表", "perm_type": "button", "parent_code": "statistics:report"},
-    {"perm_code": "statistics:full",    "perm_name": "全部报表", "perm_type": "button", "parent_code": "statistics:report"},
+    {"perm_code": "statistics:view",   "perm_name": "查看统计",      "perm_type": "button", "parent_code": "statistics:report"},
+    {"perm_code": "statistics:export", "perm_name": "导出报表",      "perm_type": "button", "parent_code": "statistics:report"},
     # 用户管理
     {"perm_code": "system:user:create",   "perm_name": "新增用户", "perm_type": "button", "parent_code": "system:user"},
     {"perm_code": "system:user:update",   "perm_name": "编辑用户", "perm_type": "button", "parent_code": "system:user"},
@@ -151,26 +164,38 @@ ROLE_PERM_MAP = {
         # 菜单
         "monitor:dashboard", "alarm:center", "device:archive", "statistics:report",
         "repair:order",
+        # 统计报表子菜单
+        "statistics:device_status", "statistics:alarm_trend", "statistics:fault_top10", "statistics:inspection",
         # 按钮
         "monitor:view", "monitor:confirm",
         "alarm:view", "alarm:confirm", "alarm:silence", "alarm:reset", "alarm:handle",
         "device:view",
         "repair:view", "repair:create",
         "statistics:partial",
+        # 3.9：查看统计
+        "statistics:view",
         # 联动预案（值班员只能查看和执行）
         "linkage:view", "linkage:execute",
         # 应急处置（值班员可参与时间轴记录）
         "emergency:view", "emergency:timeline",
+        # 消防演练（OQ-5 方案一：值班员可查看与执行演练）
+        "drill:event", "drill:view", "drill:execute",
     ],
     "maintainer": [
         # 菜单
         "device:archive", "inspection:task", "repair:order", "statistics:report",
+        # 统计报表子菜单
+        "statistics:device_status", "statistics:alarm_trend", "statistics:fault_top10", "statistics:inspection",
         # 按钮
         "device:view", "device:repair",
         "inspection:execute",  # 仅可执行巡检，不可管理计划
         "inspection:stat",     # 可查看统计
         "repair:view", "repair:create", "repair:repair",
         "statistics:partial",
+        # 3.9：查看统计
+        "statistics:view",
+        # 消防演练（维保人员可查看与执行演练，OQ-5 方案一）
+        "drill:event", "drill:view", "drill:execute",
     ],
     "chief": [
         # 主管拥有全部权限（通过代码自动绑定所有权限）

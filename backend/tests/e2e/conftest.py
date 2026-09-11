@@ -15,9 +15,13 @@ from tests.e2e.common import RUN_TAG, Api, device_payload, find_by_keyword, logi
 
 
 @pytest.fixture(scope="session")
-def base_url() -> str:
+def base_url() -> str | None:
     url = os.getenv("E2E_BASE_URL")
     if not url:
+        # 如果设置了 RUN_IN_MEMORY=True，则返回 None（使用 ASGI transport）
+        run_in_memory = os.getenv("RUN_IN_MEMORY", "False").lower() == "true"
+        if run_in_memory:
+            return None
         pytest.skip("未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）")
     return url.rstrip("/")
 
