@@ -1,0 +1,4 @@
+{
+  "status": "runtime-error",
+  "error": "Failed to resolve module specifier \"qoder/canvas/icons\". Relative references must start with either \"/\", \"./\", or \"../\"."
+}

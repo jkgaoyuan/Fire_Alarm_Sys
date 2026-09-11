@@ -13,7 +13,7 @@ single_test_run.txt
 test_after_conftest_fix.txt
 test_v*.txt
 backend/debug_inspection_500.py
-
+frontend/node_modules/*
 # Environment
 .env
 .env.local
