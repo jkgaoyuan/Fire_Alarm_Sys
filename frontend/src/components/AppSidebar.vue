@@ -13,8 +13,9 @@
         text-color="#bfcbd9"
         active-text-color="#c23531"
       >
+        <!-- 使用归一化菜单数据（路径不带前导斜杠，与动态路由匹配） -->
         <SidebarItem
-          v-for="route in menus"
+          v-for="route in displayMenus"
           :key="route.perm_code || route.path"
           :item="route"
         />
@@ -32,7 +33,9 @@ import SidebarItem from './SidebarItem.vue'
 const route = useRoute()
 const permissionStore = usePermissionStore()
 
-const menus = computed(() => permissionStore.menus)
+// 使用归一化菜单数据（路径已去除前导斜杠）
+const displayMenus = computed(() => permissionStore.displayMenus)
+const menus = computed(() => permissionStore.menus)  // 保留原始菜单供兼容
 const activeMenu = computed(() => {
   const { meta, path } = route
   if (meta?.activeMenu) return meta.activeMenu

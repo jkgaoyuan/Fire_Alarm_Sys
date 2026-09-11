@@ -33,7 +33,7 @@ export const staticRoutes = [
     redirect: '/monitor/dashboard',  // 明确重定向到监控大屏
     children: [
       {
-        path: 'monitor/dashboard',
+        path: '/monitor/dashboard',  // 监控大屏 - 必须带前导斜杠
         name: 'Dashboard',
         component: () => import('@/views/monitor/Dashboard.vue'),
         meta: { 

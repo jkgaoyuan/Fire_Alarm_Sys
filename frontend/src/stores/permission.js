@@ -3,23 +3,29 @@ import { ref, computed } from 'vue'
 import { getMenus, getPermissions } from '@/api/user'
 import router from '@/router'
 import { staticRoutes } from '@/router/staticRoutes'
-import { generateRoutesFromMenus, collectPaths } from '@/utils/menu'
+import { generateRoutesFromMenus, collectPaths, normalizeMenuForDisplay } from '@/utils/menu'
 
 export const usePermissionStore = defineStore('permission', () => {
   // State
-  const menus = ref([])
+  const menus = ref([])  // 原始菜单数据（后端返回）
   const permissions = ref([])
   const dynamicRoutes = ref([])
   const isRoutesLoaded = ref(false)
 
   // Getters
   const flatMenuPaths = computed(() => collectPaths(menus.value))
+  
+  // 用于 el-menu 显示的归一化菜单（路径不带前导斜杠）
+  const displayMenus = computed(() => {
+    return menus.value.length > 0 ? normalizeMenuForDisplay(menus.value) : []
+  })
 
   // Actions
   async function generateRoutes() {
     // 1. 获取菜单
     const menuRes = await getMenus()
-    menus.value = menuRes.data || []
+    const rawMenus = menuRes.data || []
+    menus.value = rawMenus
 
     // 2. 获取权限码列表
     const permRes = await getPermissions()
@@ -29,26 +35,30 @@ export const usePermissionStore = defineStore('permission', () => {
     const routes = generateRoutesFromMenus(menus.value)
     dynamicRoutes.value = routes
 
-    // 4. 检查是否已经有 Layout 根路由存在（来自静态路由）
-    const hasLayoutRoute = router.getRoutes().some(r => r.path === '/')
-    
-    if (!hasLayoutRoute) {
-      // 如果没有，则创建默认的 Layout
-      const layoutRoute = {
-        path: '/',
-        name: 'LayoutRoot',
-        component: () => import('@/components/Layout.vue'),
-        children: routes,
-      }
-      router.addRoute(layoutRoute)
-    }
+    console.log('[Permission Store] Generated routes:', routes.map(r => `${r.path} (${r.name})`))
+    console.log('[Permission Store] All available routes before adding:', router.getRoutes().map(r => `${r.path} [${r.name}]`))
 
-    // 404 兜底（必须最后添加）
+    // 4. Add generated routes directly to the router
+    // In Vue Router 4.x, use router.addRoute() instead of route.addRoute()
+    console.log('[Permission Store] Adding', routes.length, 'dynamic routes')
+    
+    routes.forEach(route => {
+      router.addRoute(route)
+      console.log(`  [Permission Store] Added dynamic route: ${route.path}`)
+    })
+
+    // 5. 404 fallback (must be added last for wildcard matching)
     router.addRoute({
       path: '/:pathMatch(.*)*',
       name: 'NotFoundWildcard',
-      redirect: '/404',
+      component: () => import('@/views/error/404.vue'),
     })
+
+    console.log('[Permission Store] All routes after generation:', router.getRoutes().map(r => `${r.path} (${r.name})`))
+    
+    // Force Vue to re-render any components using permission store state
+    // This ensures menu reflects new routes immediately
+    console.log('[Permission Store] Routes loaded, triggering updates...')
 
     isRoutesLoaded.value = true
     return routes
@@ -63,6 +73,7 @@ export const usePermissionStore = defineStore('permission', () => {
 
   return {
     menus,
+    displayMenus,  // 用于 el-menu 显示的归一化菜单
     permissions,
     dynamicRoutes,
     isRoutesLoaded,

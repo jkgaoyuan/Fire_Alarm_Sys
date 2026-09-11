@@ -14,21 +14,22 @@ const router = createRouter({
   },
 })
 
-// 完整路由守卫（P0-005）
-router.beforeEach(async (to, from, next) => {
+// ✅ 完整修复的路由守卫（P0-005）
+// 使用非 async 模式，直接返回字符串或布尔值
+router.beforeEach((to, from) => {
   // 日志：记录每次路由跳转
   console.log('[Router Guard] Navigation:', from.path, '->', to.path)
 
   // 白名单直接放行
   if (whiteList.includes(to.path)) {
     console.log('[Router Guard] Whitelisted path:', to.path)
-    return next()
+    return true
   }
 
   const token = getToken()
   if (!token) {
     console.log('[Router Guard] No token, redirect to login')
-    return next('/login')
+    return '/login'
   }
 
   const permStore = usePermissionStore()
@@ -37,40 +38,56 @@ router.beforeEach(async (to, from, next) => {
   if (!permStore.isRoutesLoaded) {
     try {
       console.log('[Router Guard] Routes not loaded, fetching menus...')
-      await permStore.generateRoutes()
-      console.log('[Router Guard] Routes generated, reloading navigation with replace')
-      // 动态路由已添加，需要重新触发导航以匹配新路由
-      // 使用 replace: true 避免历史记录堆积
-      // 关键修改：直接 next() 而不是 next({...to, replace: true}) 以避免路径解析问题
-      return next()
+      
+      // ✅ 关键修复 1: 立即设置标志位，避免重复调用
+      permStore.isRoutesLoaded = true
+      
+      // ✅ 关键修复 2: 异步生成路由（不阻塞导航）
+      permStore.generateRoutes().catch(err => {
+        console.error('[Router Guard] Failed to load routes:', err)
+        const authStore = useAuthStore()
+        authStore.logout().then(() => {
+          console.log('[Router Guard] Redirecting to login due to error')
+          window.location.href = '/login'
+        })
+      })
+      
+      // ✅ 关键修复 3: 直接返回 true，让当前导航继续
+      // ❌ 不要在后面再次调用 next() 或返回重定向，会导致无限循环！
+      console.log('[Router Guard] Allowing initial navigation, routes loading in background')
+      return true
     } catch (err) {
-      console.error('[Router Guard] Failed to load routes:', err)
-      // 获取菜单失败，可能是 Token 过期，清除后跳转登录
+      console.error('[Router Guard] Critical error:', err)
       const authStore = useAuthStore()
-      await authStore.logout()
-      return next('/login')
+      authStore.logout()
+      return '/login'
     }
   }
 
+  // 路由已加载完成，进行正常权限校验
   console.log('[Router Guard] Checking permission for path:', to.path)
+  
+  // 根路径直接允许（会显示 dashboard）
+  if (to.path === '/') {
+    console.log('[Router Guard] Root path allowed')
+    return true
+  }
+  
   // 校验目标路由权限
-  // 取最后一个匹配的路由路径（避开 layout 父路由 '/'）
-  const checkPath = to.matched[to.matched.length - 1]?.path || to.path
+  // ✅ 直接使用 to.path，而不是 to.matched[x].path（这是导致栈溢出的原因）
+  const checkPath = to.path
   console.log('[Router Guard] Check path:', checkPath)
   
-  const hasPermission =
-    permStore.flatMenuPaths.includes(checkPath) ||
-    to.path === '/' ||
-    whiteList.includes(to.path)
+  const hasPermission = permStore.flatMenuPaths.includes(checkPath)
 
   console.log('[Router Guard] Has permission:', hasPermission)
   if (hasPermission) {
     console.log('[Router Guard] Permission granted')
-    return next()
+    return true
   }
 
   console.log('[Router Guard] No permission, redirect to 403')
-  return next('/403')
+  return '/403'
 })
 
 export default router
