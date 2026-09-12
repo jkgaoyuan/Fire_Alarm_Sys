@@ -11,6 +11,7 @@
               <el-radio-button :label="90">近 90 天</el-radio-button>
             </el-radio-group>
             <el-button size="small" style="margin-left: 12px;" @click="$router.back()">返回</el-button>
+            <el-button size="small" type="primary" style="margin-left: 8px;" @click="handleExport">导出Excel</el-button>
           </div>
         </div>
       </template>
@@ -29,6 +30,7 @@ import { LineChart } from 'echarts/charts'
 import { TitleComponent, TooltipComponent, LegendComponent, GridComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { getAlarmTrend } from '@/api/statistics'
+import { createExportTask } from '@/api/reports'
 
 echarts.use([LineChart, TitleComponent, TooltipComponent, LegendComponent, GridComponent, CanvasRenderer])
 
@@ -36,14 +38,38 @@ const chartRef = ref(null)
 let chart = null
 
 const days = ref(7)
+const rawData = ref({ dates: [], series: [] })
 
 async function loadData() {
   try {
     const res = await getAlarmTrend({ days: days.value })
     const data = res.data || {}
+    rawData.value = data
     renderChart(data.dates || [], data.series || [])
   } catch (err) {
     ElMessage.error(err.message || '加载数据失败')
+  }
+}
+
+async function handleExport() {
+  try {
+    const { dates, series } = rawData.value
+    const typeNames = { fire: '火警', pre_fire: '预警', fault: '故障', shield: '屏蔽' }
+    const headers = ['日期', ...series.map(s => typeNames[s.type] || s.type)]
+    const rows = (dates || []).map((date, idx) => {
+      const row = { 日期: date }
+      series.forEach(s => { row[typeNames[s.type] || s.type] = s.data[idx] || 0 })
+      return row
+    })
+    await createExportTask({
+      task_type: 'alarm_trend',
+      params: { days: days.value },
+      data: rows,
+      format: 'xlsx',
+    })
+    ElMessage.success('导出任务已创建，请前往导出中心下载')
+  } catch (err) {
+    ElMessage.error(err.message || '导出失败')
   }
 }
 

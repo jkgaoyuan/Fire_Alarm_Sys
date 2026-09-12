@@ -4,7 +4,7 @@
       <template #header>
         <div class="card-header">
           <span>导出中心</span>
-          <el-button size="small" @click="$router.back()">返回</el-button>
+          <el-button size="small" @click="router.push('/statistics/report')">返回</el-button>
         </div>
       </template>
 
@@ -65,6 +65,14 @@
             </el-button>
           </template>
         </el-table-column>
+
+        <template #empty>
+          <el-empty description="暂无导出任务">
+            <el-button type="primary" size="small" @click="router.push('/statistics/report')">
+              前往统计报表发起导出
+            </el-button>
+          </el-empty>
+        </template>
       </el-table>
 
       <!-- 分页 -->
@@ -84,8 +92,11 @@
 
 <script setup>
 import { onMounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
-import { getMyExportTasks, downloadExportFile } from '@/api/reports'
+import { useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { getMyExportTasks, downloadExportFile, createExportTask } from '@/api/reports'
+
+const router = useRouter()
 
 const loading = ref(false)
 const tasks = ref([])
@@ -145,9 +156,26 @@ async function downloadFile(row) {
   }
 }
 
-function retryExport(row) {
-  ElMessage.info('请重新发起导出请求')
-  // TODO: 触发新的导出任务
+async function retryExport(row) {
+  try {
+    await ElMessageBox.confirm(
+      `重新创建导出任务：${taskTypeMap[row.task_type] || row.task_type}？`,
+      '确认重试',
+      { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' }
+    )
+    await createExportTask({
+      task_type: row.task_type,
+      params: row.params || {},
+      data: [],
+      format: 'xlsx',
+    })
+    ElMessage.success('导出任务已重新创建')
+    loadData()
+  } catch (err) {
+    if (err !== 'cancel') {
+      ElMessage.error(err.message || '重试失败')
+    }
+  }
 }
 
 function formatTime(timeStr) {

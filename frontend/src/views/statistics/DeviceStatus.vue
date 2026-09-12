@@ -6,6 +6,7 @@
           <span>设备完好率看板</span>
           <div>
             <el-button size="small" @click="$router.back()">返回</el-button>
+            <el-button size="small" type="primary" @click="handleExport">导出Excel</el-button>
           </div>
         </div>
       </template>
@@ -44,6 +45,7 @@ import { PieChart } from 'echarts/charts'
 import { TitleComponent, TooltipComponent, LegendComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { getDeviceStatusStats } from '@/api/statistics'
+import { createExportTask } from '@/api/reports'
 
 echarts.use([PieChart, TitleComponent, TooltipComponent, LegendComponent, CanvasRenderer])
 
@@ -109,6 +111,20 @@ function renderChart() {
   }
 
   chart.setOption(option)
+}
+
+async function handleExport() {
+  try {
+    await createExportTask({
+      task_type: 'device_status',
+      params: { org_id: currentOrgId.value },
+      data: statusData.value,
+      format: 'xlsx',
+    })
+    ElMessage.success('导出任务已创建，请前往导出中心下载')
+  } catch (err) {
+    ElMessage.error(err.message || '导出失败')
+  }
 }
 
 function drillDown(orgId, orgName) {
