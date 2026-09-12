@@ -4,7 +4,22 @@
       <template #header>
         <div class="card-header">
           <span>导出中心</span>
-          <el-button size="small" @click="router.push('/statistics/report')">返回</el-button>
+          <div>
+            <el-dropdown @command="handleNewExport" style="margin-right: 8px">
+              <el-button size="small" type="primary">
+                新建导出<el-icon class="el-icon--right"><arrow-down /></el-icon>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="/statistics/alarm-trend">报警趋势</el-dropdown-item>
+                  <el-dropdown-item command="/statistics/device-status">设备状态</el-dropdown-item>
+                  <el-dropdown-item command="/statistics/fault-top10">故障 TOP10</el-dropdown-item>
+                  <el-dropdown-item command="/statistics/inspection-completion">巡检完成率</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+            <el-button size="small" @click="router.push('/statistics/report')">返回</el-button>
+          </div>
         </div>
       </template>
 
@@ -94,6 +109,7 @@
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { ArrowDown } from '@element-plus/icons-vue'
 import { getMyExportTasks, downloadExportFile, createExportTask } from '@/api/reports'
 
 const router = useRouter()
@@ -176,6 +192,10 @@ async function retryExport(row) {
       ElMessage.error(err.message || '重试失败')
     }
   }
+}
+
+function handleNewExport(path) {
+  router.push(path)
 }
 
 function formatTime(timeStr) {

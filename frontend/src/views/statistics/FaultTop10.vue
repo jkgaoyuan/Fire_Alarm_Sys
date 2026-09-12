@@ -4,7 +4,10 @@
       <template #header>
         <div class="card-header">
           <span>故障 TOP10</span>
-          <el-button size="small" @click="$router.back()">返回</el-button>
+          <div>
+            <el-button size="small" @click="$router.back()">返回</el-button>
+            <el-button size="small" type="primary" style="margin-left: 8px;" @click="handleExport">导出Excel</el-button>
+          </div>
         </div>
       </template>
 
@@ -38,6 +41,7 @@ import { BarChart } from 'echarts/charts'
 import { TitleComponent, TooltipComponent, GridComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { getFaultTop10 } from '@/api/statistics'
+import { createExportTask } from '@/api/reports'
 
 echarts.use([BarChart, TitleComponent, TooltipComponent, GridComponent, CanvasRenderer])
 
@@ -104,6 +108,20 @@ function renderChart() {
   }
 
   chart.setOption(option)
+}
+
+async function handleExport() {
+  try {
+    await createExportTask({
+      task_type: 'fault_top10',
+      params: {},
+      data: faultData.value,
+      format: 'xlsx',
+    })
+    ElMessage.success('导出任务已创建，请前往导出中心下载')
+  } catch (err) {
+    ElMessage.error(err.message || '导出失败')
+  }
 }
 
 function viewDevice(deviceId) {

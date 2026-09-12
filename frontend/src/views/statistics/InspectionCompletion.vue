@@ -4,7 +4,10 @@
       <template #header>
         <div class="card-header">
           <span>巡检完成率</span>
-          <el-button size="small" @click="$router.back()">返回</el-button>
+          <div>
+            <el-button size="small" @click="$router.back()">返回</el-button>
+            <el-button size="small" type="primary" style="margin-left: 8px;" @click="handleExport">导出Excel</el-button>
+          </div>
         </div>
       </template>
 
@@ -48,6 +51,7 @@
 import { onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getInspectionCompletion } from '@/api/statistics'
+import { createExportTask } from '@/api/reports'
 
 const items = ref([])
 const overall = ref({})
@@ -59,6 +63,20 @@ async function loadData() {
     overall.value = res.data.overall || {}
   } catch (err) {
     ElMessage.error(err.message || '加载数据失败')
+  }
+}
+
+async function handleExport() {
+  try {
+    await createExportTask({
+      task_type: 'inspection',
+      params: {},
+      data: items.value,
+      format: 'xlsx',
+    })
+    ElMessage.success('导出任务已创建，请前往导出中心下载')
+  } catch (err) {
+    ElMessage.error(err.message || '导出失败')
   }
 }
 
