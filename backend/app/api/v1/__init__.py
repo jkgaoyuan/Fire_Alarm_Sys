@@ -62,7 +62,7 @@ router.include_router(linkage_plans.router, prefix="/linkage-plans", tags=["Link
 router.include_router(linkage_logs.router, prefix="/alarm-linkage-logs", tags=["Linkage Logs"])
 
 # 3.5 应急事件路由
-router.include_router(emergency_router, prefix="/emergency-events", tags=["应急处置"])
+router.include_router(emergency_router, prefix="/emergency/events", tags=["应急处置"])
 
 # 3.5 通知中心路由（与应急事件关联）
 router.include_router(notification_router, prefix="/notifications", tags=["通知中心"])

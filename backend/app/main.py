@@ -14,8 +14,6 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.v1 import router as api_v1_router
-from app.api.v1.emergency_events import router as emergency_router
-from app.api.v1.notifications import router as notification_router
 from app.api.ws_devices import router as ws_router
 from app.core.config import get_settings
 from app.core.exceptions import AuthError, NotFoundError
@@ -161,8 +159,6 @@ app.add_middleware(
 
 # 注册 API 路由
 app.include_router(api_v1_router, prefix="/api/v1")
-app.include_router(emergency_router, prefix="/api/v1")
-app.include_router(notification_router, prefix="/api/v1")
 
 # WebSocket 路由不带 /api/v1 前缀（PRD FR-013 固定地址 /ws/devices）
 app.include_router(ws_router)

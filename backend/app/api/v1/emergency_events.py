@@ -220,7 +220,7 @@ async def get_event_report(
         return {"code": http_status, "message": content}
 
 
-@router.get("/{event_id}/timeline", response_model=dict)
+@router.get("/{event_id}/timelines", response_model=dict)
 async def list_timelines(
     event_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -228,13 +228,13 @@ async def list_timelines(
 ):
     """获取时间轴列表（P0）"""
     from app.models.emergency import EmergencyTimeline
-    
+
     stmt = select(EmergencyTimeline).where(EmergencyTimeline.event_id == event_id)\
         .order_by(EmergencyTimeline.operated_at.asc())
-    
+
     result = await db.execute(stmt)
     timelines = result.scalars().all()
-    
+
     return {
         "code": 200,
         "data": {
@@ -244,7 +244,7 @@ async def list_timelines(
     }
 
 
-@router.post("/{event_id}/timeline", response_model=dict)
+@router.post("/{event_id}/timelines", response_model=dict)
 async def create_timeline(
     event_id: int,
     payload: EmergencyTimelineCreate,
@@ -256,7 +256,7 @@ async def create_timeline(
     node_title = payload.node_title
     description = payload.description
     attachments = payload.attachments
-    
+
     try:
         timeline = await add_timeline_node(
             db, event_id, node_type, user.id,
@@ -264,9 +264,30 @@ async def create_timeline(
             description=description,
             attachments=attachments
         )
-        
+
         # TODO: WebSocket 广播新节点
-        
+
         return {"code": 200, "message": "添加成功", "data": timeline}
     except Exception as e:
         return {"code": 400, "message": f"添加失败：{e}"}
+
+
+@router.delete("/timelines/{node_id}", response_model=dict)
+async def delete_timeline(
+    node_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(require_permission("emergency:timeline"))],
+):
+    """删除时间轴节点"""
+    from app.models.emergency import EmergencyTimeline
+
+    stmt = select(EmergencyTimeline).where(EmergencyTimeline.id == node_id)
+    node = (await db.execute(stmt)).scalar_one_or_none()
+
+    if not node:
+        return {"code": 404, "message": "节点不存在"}
+
+    await db.delete(node)
+    await db.commit()
+
+    return {"code": 200, "message": "删除成功"}
