@@ -79,8 +79,8 @@
               </el-button>
             </div>
 
-            <el-row :gutter="16">
-              <el-col :span="8">
+            <el-row :gutter="20">
+              <el-col :span="12">
                 <el-form-item label="动作类型" required>
                   <el-select
                     v-model="action.action_type"
@@ -97,7 +97,7 @@
                 </el-form-item>
               </el-col>
 
-              <el-col :span="8">
+              <el-col :span="12">
                 <el-form-item label="延迟执行 (秒)">
                   <el-input-number
                     v-model="action.delay_seconds"
@@ -108,11 +108,13 @@
                   />
                 </el-form-item>
               </el-col>
+            </el-row>
 
-              <el-col :span="8">
-                <el-form-item label="参数配置">
-                  <el-button size="small" @click="editParams(action)">编辑</el-button>
-                </el-form-item>
+            <el-row :gutter="20" style="margin-top: 4px">
+              <el-col :span="24" style="text-align: right">
+                <el-button size="small" @click="editParams(action)">
+                  编辑动作参数
+                </el-button>
               </el-col>
             </el-row>
 
