@@ -8,7 +8,7 @@
 import asyncio
 from datetime import datetime, timedelta
 from typing import Optional
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.emergency import EmergencyEvent, EmergencyTimeline, Notification
 from app.schemas.emergency import EmergencyTimelineCreate
@@ -350,7 +350,8 @@ async def get_user_notifications(
     if module:
         base_stmt = base_stmt.where(NotificationModel.module == module)
     
-    total = (await session.execute(base_stmt.count())).scalar()
+    count_stmt = select(func.count()).select_from(base_stmt.subquery())
+    total = (await session.execute(count_stmt)).scalar_one_or_none() or 0
     
     stmt = base_stmt.order_by(NotificationModel.created_at.desc())\
         .offset((page - 1) * page_size)\
