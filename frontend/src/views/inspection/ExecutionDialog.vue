@@ -94,7 +94,7 @@
 </template>
 
 <script setup>
-import { reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { submitInspectionRecord } from '@/api/inspection'
@@ -114,7 +114,10 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue', 'success'])
 
-const visible = ref(false)
+const visible = computed({
+  get: () => props.modelValue,
+  set: (val) => emit('update:modelValue', val),
+})
 const formRef = ref()
 const submitLoading = ref(false)
 const deviceSearch = ref('')
