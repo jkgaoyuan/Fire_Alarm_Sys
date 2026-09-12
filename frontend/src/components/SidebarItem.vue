@@ -18,11 +18,10 @@
       />
     </el-sub-menu>
 
-    <!-- 无子菜单 - 使用 router.push 直接导航 -->
+    <!-- 无子菜单 - el-menu router 属性自动处理导航 -->
     <el-menu-item
       v-else
       :index="item.path"
-      @click="handleNavigation"
     >
       <el-icon v-if="item.meta?.icon">
         <component :is="iconMap[item.meta.icon]" />
@@ -35,10 +34,7 @@
 </template>
 
 <script setup>
-import { useRouter } from 'vue-router'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
-
-const router = useRouter()
 
 defineProps({
   item: {
@@ -49,12 +45,4 @@ defineProps({
 
 // 图标名 → 组件对象的映射（供动态渲染使用）
 const iconMap = ElementPlusIconsVue
-
-// 处理导航点击
-// IMPORTANT: Use full path with leading slash for Vue Router compatibility
-function handleNavigation() {
-  const navPath = item.path.startsWith('/') ? item.path : '/' + item.path
-  console.log('[SidebarItem] Navigating to:', navPath)
-  router.push(navPath)
-}
 </script>

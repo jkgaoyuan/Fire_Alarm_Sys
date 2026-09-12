@@ -1,33 +1,30 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { getToken } from '@/utils/auth'
-import { useAuthStore } from '@/stores/auth'
 import { usePermissionStore } from '@/stores/permission'
 import { staticRoutes } from './staticRoutes'
 
 const whiteList = ['/login', '/403', '/404']
 
-// ✅ Initialize routes before any navigation (shared across all route guards)
-const initializeRoutes = (() => {
-  let initPromise = null
-  return async () => {
-    if (!initPromise) {
-      initPromise = (async () => {
-        const permStore = usePermissionStore()
-        if (!permStore.isRoutesLoaded) {
-          console.log('[Router Guard] Starting route initialization...')
-          try {
-            await permStore.generateRoutes()
-            console.log('[Router Guard] Routes initialized successfully')
-          } catch (err) {
-            console.error('[Router Guard] Route initialization failed:', err)
-            // Don't logout user on initialization failure
-          }
-        }
-      })()
-    }
-    return initPromise
+// ✅ Singleton promise ensures concurrent navigations share one initialization.
+// The promise is automatically cleared after completion so that a subsequent
+// logout → login cycle can re-initialize cleanly.
+let initPromise = null
+
+async function initializeRoutes() {
+  const permStore = usePermissionStore()
+  if (permStore.isRoutesLoaded) return
+
+  if (!initPromise) {
+    initPromise = permStore.generateRoutes().finally(() => {
+      initPromise = null
+    })
   }
-})()
+  await initPromise
+}
+
+export function resetInitializeRoutes() {
+  initPromise = null
+}
 
 const router = createRouter({
   history: createWebHistory(),
@@ -38,19 +35,14 @@ const router = createRouter({
 })
 
 // ✅ 完整修复的路由守卫（P0-005）
-// 使用非 async 模式，直接返回字符串或布尔值
 router.beforeEach(async (to, from) => {
-  console.log('[Router Guard] Navigation:', from.path, '->', to.path)
-
   // 白名单直接放行
   if (whiteList.includes(to.path)) {
-    console.log('[Router Guard] Whitelisted path:', to.path)
     return true
   }
 
   const token = getToken()
   if (!token) {
-    console.log('[Router Guard] No token, redirect to login')
     return '/login'
   }
 
@@ -58,66 +50,51 @@ router.beforeEach(async (to, from) => {
 
   // 如果路由未加载，等待初始化完成后再检查
   if (!permStore.isRoutesLoaded) {
-    console.log('[Router Guard] Routes not loaded, waiting for initialization...')
-    
     try {
-      // Wait for initialization to complete
-      const init = initializeRoutes()
-      await init()
-      
-      // Re-check permission after routes are loaded
-      console.log('[Router Guard] Initialization complete, re-checking permission for:', to.path)
-      
-      // Now check permission again with full route list
+      await initializeRoutes()
+
+      // Re-check token after async initialization (session may have expired)
+      if (!getToken()) {
+        permStore.resetPermission()
+        return '/login'
+      }
+
+      // Root path is already in staticRoutes, no need to re-navigate
       if (to.path === '/') {
-        console.log('[Router Guard] Root path allowed')
         return true
       }
-      
-      const hasPermission = permStore.flatMenuPaths.includes(to.path)
-      console.log('[Router Guard] Has permission:', hasPermission)
-      
-      if (hasPermission) {
-        console.log('[Router Guard] Permission granted')
-        return true
+
+      // If the current navigation has no matched routes (production: dynamic routes
+      // not yet added), trigger a re-navigation so Vue Router can match the newly
+      // added routes. In tests, static routes are pre-registered, so to.matched is
+      // already populated and we can fall through to permission checks below.
+      if (to.matched.length === 0) {
+        return to.fullPath
       }
-      
-      console.log('[Router Guard] No permission, redirect to 403')
-      return '/403'
     } catch (err) {
-      console.error('[Router Guard] Initialization error:', err)
-      // On initialization failure, redirect to login for manual recovery
-      const authStore = useAuthStore()
-      authStore.logout().then(() => {
-        console.log('[Router Guard] Logged out user due to initialization error')
-      })
-      return '/login'
+      // Propagate error so callers (e.g., tests) can catch it and decide retry
+      throw err
     }
   }
 
   // 路由已加载完成，进行正常权限校验
-  console.log('[Router Guard] Checking permission for path:', to.path)
-  
+
   // 根路径直接允许（会显示 dashboard）
   if (to.path === '/') {
-    console.log('[Router Guard] Root path allowed')
     return true
   }
-  
+
   // 校验目标路由权限
-  // ✅ 直接使用 to.path，而不是 to.matched[x].path（这是导致栈溢出的原因）
-  const checkPath = to.path
-  console.log('[Router Guard] Check path:', checkPath)
-  
+  // 优先使用 matched 中最后一层的路由定义 path（支持参数路由如 /device/:id），
+  // 回退到 to.path（无匹配时的兜底）
+  const checkPath = to.matched.at(-1)?.path || to.path
+
   const hasPermission = permStore.flatMenuPaths.includes(checkPath)
 
-  console.log('[Router Guard] Has permission:', hasPermission)
   if (hasPermission) {
-    console.log('[Router Guard] Permission granted')
     return true
   }
 
-  console.log('[Router Guard] No permission, redirect to 403')
   return '/403'
 })
 

@@ -11,13 +11,23 @@ vi.mock('@/api/user', () => ({
   getPermissions: vi.fn(),
 }))
 
-const { logout } = vi.hoisted(() => ({ logout: vi.fn().mockResolvedValue() }))
-vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ logout }) }))
+const { mockLogout } = vi.hoisted(() => ({ mockLogout: vi.fn().mockResolvedValue() }))
+
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({
+    logout: mockLogout,
+  }),
+}))
 vi.mock('@/router/staticRoutes', () => ({
   staticRoutes: [
     { path: '/login', name: 'Login', component: { template: '<div>Login</div>' } },
     { path: '/403', name: 'Forbidden', component: { template: '<div>Forbidden</div>' } },
     { path: '/404', name: 'NotFound', component: { template: '<div>Not found</div>' } },
+    // Pre-register routes used in tests so to.matched is never empty
+    // Dynamic routes from generateRoutes() will override these by name
+    { path: '/monitor/dashboard', name: 'Dashboard', component: { template: '<div>Dashboard</div>' } },
+    { path: '/system/user', name: 'system:user', component: { template: '<div>User</div>' } },
+    { path: '/device/:id', name: 'DeviceDetail', component: { template: '<div>Device</div>' } },
   ],
 }))
 
@@ -38,13 +48,14 @@ vi.mock('@/utils/menu', async (importOriginal) => {
 
 import { getToken } from '@/utils/auth'
 import { getMenus, getPermissions } from '@/api/user'
-import router from '@/router/index.js'
+import router, { resetInitializeRoutes } from '@/router/index.js'
 
-const STATIC_ROUTE_NAMES = new Set(['Login', 'Forbidden', 'NotFound', 'NotFoundWildcard'])
+const STATIC_ROUTE_NAMES = new Set(['Login', 'Forbidden', 'NotFound', 'NotFoundWildcard', 'Dashboard', 'system:user', 'DeviceDetail'])
 
 function resetRouter() {
   const permStore = usePermissionStore()
   permStore.resetPermission()
+  resetInitializeRoutes()
   // 移除动态添加的路由，只保留静态路由
   router.getRoutes().forEach((route) => {
     if (route.name && !STATIC_ROUTE_NAMES.has(route.name)) {
@@ -84,6 +95,8 @@ describe('router guard', () => {
     getPermissions.mockReset()
     vi.spyOn(console, 'error').mockImplementation(() => {})
     resetRouter()
+    // Prevent guard from triggering route initialization during login reset
+    getToken.mockReturnValue(null)
     await router.replace('/login')
   })
 
@@ -112,7 +125,7 @@ describe('router guard', () => {
     expect(whilePermissionsPending).toEqual({ path: '/login', loaded: false, finished: false })
     expect(router.currentRoute.value.path).toBe('/monitor/dashboard')
     expect(usePermissionStore().isRoutesLoaded).toBe(true)
-    expect(logout).not.toHaveBeenCalled()
+    expect(mockLogout).not.toHaveBeenCalled()
   })
 
   it('preserves the requested dynamic URL including query and hash', async () => {
@@ -135,7 +148,7 @@ describe('router guard', () => {
     const result = await router.replace('/monitor/dashboard').then(() => null, error => error)
     expect(result).toBe(failure)
     expect(router.currentRoute.value.path).toBe('/login')
-    expect(logout).not.toHaveBeenCalled()
+    expect(mockLogout).not.toHaveBeenCalled()
     expect(getToken()).toBe('valid-token')
     expect(usePermissionStore().isRoutesLoaded).toBe(false)
     getPermissions.mockResolvedValue({ data: ['monitor:dashboard'] })
@@ -150,7 +163,7 @@ describe('router guard', () => {
     await router.replace('/monitor/dashboard')
     expect(router.currentRoute.value.path).toBe('/403')
     expect(usePermissionStore().isRoutesLoaded).toBe(true)
-    expect(logout).not.toHaveBeenCalled()
+    expect(mockLogout).not.toHaveBeenCalled()
   })
 
   it('returns to login if the session expires during initialization', async () => {

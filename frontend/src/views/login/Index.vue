@@ -114,8 +114,7 @@ async function handleLogin() {
       password: form.password,
     })
     ElMessage.success('登录成功')
-    // Router guard will automatically redirect to dashboard after routes are loaded
-    // No manual navigation needed - let the guard handle it
+    router.push('/')
   } catch (err) {
     const code = err.code
     const data = err.data || {}

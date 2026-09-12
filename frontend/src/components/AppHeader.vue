@@ -27,6 +27,7 @@ import { ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import { usePermissionStore } from '@/stores/permission'
+import Breadcrumb from './Breadcrumb.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()

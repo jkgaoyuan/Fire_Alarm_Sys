@@ -136,7 +136,11 @@ export function collectPaths(menus) {
     for (const node of nodes) {
       if (node.route_path || node.path) {
         // IMPORTANT: Keep leading slash to match Vue Router route paths
-        const normalizedPath = node.route_path || node.path
+        let normalizedPath = node.route_path || node.path
+        // Normalize: ensure leading slash for Vue Router compatibility
+        if (normalizedPath && !normalizedPath.startsWith('/')) {
+          normalizedPath = '/' + normalizedPath
+        }
         paths.push(normalizedPath)
       }
       if (node.children) traverse(node.children)
