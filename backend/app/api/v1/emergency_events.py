@@ -11,7 +11,7 @@
 from typing import Annotated, Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 
 from app.core.dependencies import get_current_user, require_permission
 from app.db.session import get_db
@@ -82,7 +82,8 @@ async def list_emergency_events(
     if status:
         base_stmt = base_stmt.where(EmergencyEvent.status == status)
     
-    total = (await db.execute(base_stmt.count())).scalar()
+    count_stmt = select(func.count()).select_from(base_stmt.subquery())
+    total = (await db.execute(count_stmt)).scalar_one_or_none() or 0
     
     stmt = base_stmt.order_by(EmergencyEvent.created_at.desc())\
         .offset((page - 1) * page_size)\
