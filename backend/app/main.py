@@ -36,17 +36,33 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 
 def _run_alembic_upgrade():
-    """同步运行 Alembic 迁移（在独立线程中执行）"""
+    """同步运行 Alembic 迁移（在独立线程中执行）
+    兼容已有表但缺失 alembic_version 的存量数据库
+    """
+    import traceback
     try:
         from alembic.config import Config
         from alembic import command
         backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         alembic_ini = os.path.join(backend_dir, "alembic.ini")
         alembic_cfg = Config(alembic_ini)
-        command.upgrade(alembic_cfg, "head")
-        print("[START] Database migrations applied successfully")
+
+        try:
+            command.upgrade(alembic_cfg, "head")
+            print("[START] Database migrations applied successfully")
+        except Exception as upgrade_exc:
+            err_str = str(upgrade_exc)
+            # 表已存在但 alembic_version 缺失 → 先 stamp baseline 再 upgrade
+            if "already exists" in err_str or "DuplicateTableError" in err_str:
+                print("[WARN] Tables already exist but alembic_version missing. Stamping baseline...")
+                command.stamp(alembic_cfg, "54d02fd0cebb")
+                command.upgrade(alembic_cfg, "head")
+                print("[START] Database migrations applied successfully after stamping baseline")
+            else:
+                raise
     except Exception as exc:
-        print(f"[WARN] Database migration failed: {exc}")
+        traceback_str = traceback.format_exc()
+        print(f"[WARN] Database migration failed: {exc}\n{traceback_str}")
 
 
 @asynccontextmanager
