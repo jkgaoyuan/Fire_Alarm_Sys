@@ -339,8 +339,8 @@ async def get_linkage_logs(
     if end_time is not None:
         stmt = stmt.where(AlarmLinkageLog.created_at <= end_time)
     
-    # 总数
-    count_stmt = select(stmt.subquery().count())
+    # 总数 (SQLAlchemy 2.0 正确语法)
+    count_stmt = select(func.count()).select_from(stmt.subquery())
     total = (await db.execute(count_stmt)).scalar_one_or_none()
     
     # 数据

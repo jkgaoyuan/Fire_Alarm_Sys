@@ -4,6 +4,7 @@
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
 from typing import Optional
@@ -49,8 +50,8 @@ async def get_alarm_linkage_logs(
     if end_time is not None:
         stmt = stmt.where(AlarmLinkageLog.created_at <= end_time)
     
-    # 总数统计
-    count_stmt = select(stmt.subquery().count())
+    # 总数统计 (SQLAlchemy 2.0 正确语法)
+    count_stmt = select(func.count()).select_from(stmt.subquery())
     total = (await db.execute(count_stmt)).scalar_one_or_none()
     
     # 获取数据

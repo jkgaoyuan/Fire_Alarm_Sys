@@ -5,6 +5,8 @@ FastAPI 应用入口
 
 from contextlib import asynccontextmanager
 from typing import Optional
+import os
+import asyncio
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,6 +19,8 @@ from app.api.v1.notifications import router as notification_router
 from app.api.ws_devices import router as ws_router
 from app.core.config import get_settings
 from app.core.exceptions import AuthError, NotFoundError
+import traceback
+import time
 from app.db.redis import close_redis_pool, get_redis_pool
 from app.services import ws_broadcaster
 from app.services.emergency_service import EmergencyEscalationTask
@@ -30,11 +34,30 @@ escalation_task: Optional[EmergencyEscalationTask] = None  # 超时升级后台�
 
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
+
+def _run_alembic_upgrade():
+    """同步运行 Alembic 迁移（在独立线程中执行）"""
+    try:
+        from alembic.config import Config
+        from alembic import command
+        backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        alembic_ini = os.path.join(backend_dir, "alembic.ini")
+        alembic_cfg = Config(alembic_ini)
+        command.upgrade(alembic_cfg, "head")
+        print("[START] Database migrations applied successfully")
+    except Exception as exc:
+        print(f"[WARN] Database migration failed: {exc}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     # 启动时执行
     print(f"[START] {settings.APP_NAME} v{settings.APP_VERSION} started")
+
+    # 自动运行 Alembic 迁移（首次启动时创建所有缺失的表）
+    await asyncio.to_thread(_run_alembic_upgrade)
+
     offline_monitor.start()
     
     # P2-008：eager 启动 WS 扇出消费者，确保多 worker 下每个进程都消费全量消息
@@ -115,6 +138,22 @@ async def auth_error_handler(request: Request, exc: AuthError):
 async def not_found_error_handler(request: Request, exc: NotFoundError):
     """业务 404：HTTP 保持 200，由统一响应体 code 表达（与 3.2 接口口径一致）"""
     return JSONResponse(status_code=200, content=exc.to_dict())
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """全局兜底异常处理：捕获所有未处理异常，确保返回 JSON 并携带 CORS 头"""
+    traceback_str = traceback.format_exc()
+    print(f"[ERROR] Unhandled exception: {exc}\n{traceback_str}")
+    return JSONResponse(
+        status_code=500,
+        content={
+            "code": 500,
+            "message": f"服务器内部错误: {str(exc)}",
+            "data": None,
+            "timestamp": int(time.time()),
+        },
+    )
 
 
 @app.get("/health", tags=["健康检查"])
