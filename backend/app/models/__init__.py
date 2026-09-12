@@ -15,6 +15,7 @@ from app.models.inspection import (
 from app.models.organization import Organization
 from app.models.permission import Permission
 from app.models.repair import RepairOrder
+from app.models.linkage import AlarmLinkageLog, LinkagePlan
 from app.models.report_export import ReportExportTask
 from app.models.user import LoginLog, Role, User
 
@@ -31,6 +32,9 @@ __all__ = [
     "EmergencyEvent",
     "EmergencyTimeline",
     "Notification",
+    # 3.4 联动预案
+    "LinkagePlan",
+    "AlarmLinkageLog",
     # 3.6 巡检模块新增
     "InspectionPlan",
     "InspectionTask",

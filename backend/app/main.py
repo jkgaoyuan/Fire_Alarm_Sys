@@ -35,34 +35,69 @@ escalation_task: Optional[EmergencyEscalationTask] = None  # 超时升级后台�
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 
-def _run_alembic_upgrade():
-    """同步运行 Alembic 迁移（在独立线程中执行）
-    兼容已有表但缺失 alembic_version 的存量数据库
+def _try_alembic_upgrade() -> bool:
+    """在线程中执行 Alembic upgrade。
+    返回 True=成功，False=因表已存在失败（可安全降级处理）。
+    """
+    from alembic.config import Config
+    from alembic import command
+    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    alembic_ini = os.path.join(backend_dir, "alembic.ini")
+    alembic_cfg = Config(alembic_ini)
+    command.upgrade(alembic_cfg, "head")
+    print("[START] Database migrations applied successfully")
+    return True
+
+
+def _try_alembic_stamp_head() -> None:
+    """在线程中执行 Alembic stamp head，跳过所有迁移脚本。"""
+    from alembic.config import Config
+    from alembic import command
+    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    alembic_ini = os.path.join(backend_dir, "alembic.ini")
+    alembic_cfg = Config(alembic_ini)
+    command.stamp(alembic_cfg, "head")
+
+
+async def _ensure_database_schema() -> None:
+    """应用启动时确保数据库表结构完整。
+    - 全新空库：Alembic upgrade head 正常创建所有表
+    - 存量脏库（表已存在但 alembic_version 缺失）：stamp head + SQLAlchemy create_all 补齐
     """
     import traceback
-    try:
-        from alembic.config import Config
-        from alembic import command
-        backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        alembic_ini = os.path.join(backend_dir, "alembic.ini")
-        alembic_cfg = Config(alembic_ini)
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from app.models.base import Base
+    import app.models  # noqa: F401 — 确保所有模型注册到 Base.metadata
 
+    engine = create_async_engine(settings.database_url_async)
+
+    try:
+        # 1. 先尝试标准 Alembic upgrade（在线程中执行，避免与 lifespan 事件循环冲突）
+        alembic_ok = False
         try:
-            command.upgrade(alembic_cfg, "head")
-            print("[START] Database migrations applied successfully")
+            alembic_ok = await asyncio.to_thread(_try_alembic_upgrade)
         except Exception as upgrade_exc:
-            err_str = str(upgrade_exc)
-            # 表已存在但 alembic_version 缺失 → 先 stamp baseline 再 upgrade
-            if "already exists" in err_str or "DuplicateTableError" in err_str:
-                print("[WARN] Tables already exist but alembic_version missing. Stamping baseline...")
-                command.stamp(alembic_cfg, "54d02fd0cebb")
-                command.upgrade(alembic_cfg, "head")
-                print("[START] Database migrations applied successfully after stamping baseline")
+            if "already exists" in str(upgrade_exc) or "DuplicateTableError" in str(upgrade_exc):
+                alembic_ok = False
             else:
                 raise
+
+        if not alembic_ok:
+            # 2. 存量库场景：直接 stamp head 跳过全部迁移脚本
+            print("[WARN] Existing tables block Alembic. Stamping head + SQLAlchemy create_all...")
+            await asyncio.to_thread(_try_alembic_stamp_head)
+
+            # 3. 用 SQLAlchemy 幂等地补齐缺失表（checkfirst=True 会跳过已存在的表）
+            async with engine.begin() as conn:
+                def _create_all(sync_conn):
+                    Base.metadata.create_all(sync_conn, checkfirst=True)
+                await conn.run_sync(_create_all)
+            print("[START] Database schema ensured (stamp head + create_all)")
     except Exception as exc:
         traceback_str = traceback.format_exc()
-        print(f"[WARN] Database migration failed: {exc}\n{traceback_str}")
+        print(f"[WARN] Database setup failed: {exc}\n{traceback_str}")
+    finally:
+        await engine.dispose()
 
 
 @asynccontextmanager
@@ -71,8 +106,8 @@ async def lifespan(app: FastAPI):
     # 启动时执行
     print(f"[START] {settings.APP_NAME} v{settings.APP_VERSION} started")
 
-    # 自动运行 Alembic 迁移（首次启动时创建所有缺失的表）
-    await asyncio.to_thread(_run_alembic_upgrade)
+    # 自动确保数据库表结构完整（首次启动或存量脏库都能自愈）
+    await _ensure_database_schema()
 
     offline_monitor.start()
     
