@@ -84,15 +84,16 @@ async def _ensure_database_schema() -> None:
 
         if not alembic_ok:
             # 2. 存量库场景：直接 stamp head 跳过全部迁移脚本
-            print("[WARN] Existing tables block Alembic. Stamping head + SQLAlchemy create_all...")
+            print("[WARN] Existing tables block Alembic. Stamping head...")
             await asyncio.to_thread(_try_alembic_stamp_head)
 
-            # 3. 用 SQLAlchemy 幂等地补齐缺失表（checkfirst=True 会跳过已存在的表）
-            async with engine.begin() as conn:
-                def _create_all(sync_conn):
-                    Base.metadata.create_all(sync_conn, checkfirst=True)
-                await conn.run_sync(_create_all)
-            print("[START] Database schema ensured (stamp head + create_all)")
+        # 3. 无论 Alembic 成功还是失败，都用 SQLAlchemy 幂等地确保所有表存在
+        # （防止 init_data.py 或其他前置脚本只创建了部分表）
+        async with engine.begin() as conn:
+            def _create_all(sync_conn):
+                Base.metadata.create_all(sync_conn, checkfirst=True)
+            await conn.run_sync(_create_all)
+        print("[START] Database schema verified via SQLAlchemy create_all")
     except Exception as exc:
         traceback_str = traceback.format_exc()
         print(f"[WARN] Database setup failed: {exc}\n{traceback_str}")

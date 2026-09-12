@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 from app.core.config import get_settings
 from app.core.security import get_password_hash
 from app.models.base import Base
+import app.models  # noqa: F401 — 确保所有模型注册到 Base.metadata
 from app.models.device_type import DeviceType
 from app.models.organization import Organization
 from app.models.permission import Permission
@@ -474,5 +475,18 @@ async def main():
         await engine.dispose()
 
 
+def _stamp_alembic_head() -> None:
+    """在事件循环结束后同步执行，避免与 env.py 中的 asyncio.run 冲突"""
+    from alembic.config import Config
+    from alembic import command
+
+    backend_dir = Path(__file__).resolve().parent.parent
+    alembic_ini = backend_dir / "alembic.ini"
+    alembic_cfg = Config(str(alembic_ini))
+    command.stamp(alembic_cfg, "head")
+    print("[✓] Alembic 版本已标记为 head")
+
+
 if __name__ == "__main__":
     asyncio.run(main())
+    _stamp_alembic_head()
