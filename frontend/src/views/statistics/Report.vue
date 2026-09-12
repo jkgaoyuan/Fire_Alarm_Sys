@@ -1,5 +1,5 @@
 <template>
-  <div class="page-container">
+  <div v-if="route.path === '/statistics/report'" class="page-container">
     <!-- 综合概览卡片 -->
     <el-row :gutter="20" class="overview-cards">
       <el-col :span="6">
@@ -91,14 +91,17 @@
       </el-col>
     </el-row>
   </div>
+  <router-view v-else />
 </template>
 
 <script setup>
 import { onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Box, CircleCheck, Bell, Tools, PieChart, TrendCharts, Histogram, DataLine } from '@element-plus/icons-vue'
 import { getStatisticsOverview } from '@/api/statistics'
 
+const route = useRoute()
 const overview = ref({})
 
 onMounted(async () => {
