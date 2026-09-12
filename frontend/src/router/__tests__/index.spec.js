@@ -23,11 +23,21 @@ vi.mock('@/router/staticRoutes', () => ({
     { path: '/login', name: 'Login', component: { template: '<div>Login</div>' } },
     { path: '/403', name: 'Forbidden', component: { template: '<div>Forbidden</div>' } },
     { path: '/404', name: 'NotFound', component: { template: '<div>Not found</div>' } },
-    // Pre-register routes used in tests so to.matched is never empty
-    // Dynamic routes from generateRoutes() will override these by name
-    { path: '/monitor/dashboard', name: 'Dashboard', component: { template: '<div>Dashboard</div>' } },
-    { path: '/system/user', name: 'system:user', component: { template: '<div>User</div>' } },
-    { path: '/device/:id', name: 'DeviceDetail', component: { template: '<div>Device</div>' } },
+    // Home route with children — matches production structure where all business
+    // pages are mounted under '/' so Layout (sidebar) stays alive.
+    {
+      path: '/',
+      name: 'Home',
+      component: { template: '<div>Layout</div>' },
+      redirect: '/monitor/dashboard',
+      children: [
+        // Pre-register routes used in tests so to.matched is never empty
+        // Dynamic routes from generateRoutes() will override these by name
+        { path: '/monitor/dashboard', name: 'Dashboard', component: { template: '<div>Dashboard</div>' } },
+        { path: '/system/user', name: 'system:user', component: { template: '<div>User</div>' } },
+        { path: '/device/:id', name: 'DeviceDetail', component: { template: '<div>Device</div>' } },
+      ],
+    },
   ],
 }))
 
@@ -50,7 +60,7 @@ import { getToken } from '@/utils/auth'
 import { getMenus, getPermissions } from '@/api/user'
 import router, { resetInitializeRoutes } from '@/router/index.js'
 
-const STATIC_ROUTE_NAMES = new Set(['Login', 'Forbidden', 'NotFound', 'NotFoundWildcard', 'Dashboard', 'system:user', 'DeviceDetail'])
+const STATIC_ROUTE_NAMES = new Set(['Login', 'Forbidden', 'NotFound', 'NotFoundWildcard', 'Home', 'Dashboard', 'system:user', 'DeviceDetail'])
 
 function resetRouter() {
   const permStore = usePermissionStore()
@@ -287,19 +297,14 @@ describe('router guard', () => {
   it('访问根路径 / 应放行', async () => {
     getToken.mockReturnValue('valid-token')
     const permStore = usePermissionStore()
+    // Home route has redirect: '/monitor/dashboard', so menus must cover the target path
     permStore.menus = [
-      { path: '/dashboard', name: 'dashboard', meta: { title: '首页' } },
+      { path: '/monitor/dashboard', name: 'dashboard', meta: { title: '实时监控' } },
     ]
     permStore.isRoutesLoaded = true
 
-    // 注册根路由
-    router.addRoute({
-      path: '/',
-      name: 'Root',
-      component: { template: '<div>Root</div>' },
-    })
-
     await router.push('/')
-    expect(router.currentRoute.value.path).toBe('/')
+    // Home redirects to /monitor/dashboard; permission check should allow it
+    expect(router.currentRoute.value.path).toBe('/monitor/dashboard')
   })
 })

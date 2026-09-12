@@ -4,7 +4,8 @@ import { usePermissionStore } from '../permission'
 
 vi.mock('@/router', () => {
   const mockAddRoute = vi.fn()
-  return { default: { addRoute: mockAddRoute } }
+  const mockGetRoutes = vi.fn(() => [])
+  return { default: { addRoute: mockAddRoute, getRoutes: mockGetRoutes } }
 })
 
 vi.mock('@/api/user', () => ({
@@ -58,7 +59,7 @@ describe('permission store', () => {
     expect(mockAddRoute).toHaveBeenCalledTimes(2)
   })
 
-  it('generateRoutes 的 layout redirect 应指向第一个菜单路径', async () => {
+  it('generateRoutes 应将动态路由添加为 Home 的子路由', async () => {
     const store = usePermissionStore()
     getMenus.mockResolvedValue({
       data: [{ path: '/dashboard', name: 'dashboard', meta: { title: '首页' } }],
@@ -67,24 +68,28 @@ describe('permission store', () => {
 
     await store.generateRoutes()
 
-    const layoutCall = mockAddRoute.mock.calls.find(
-      (call) => call[0].path === '/'
+    // 业务路由应作为 Home 的子路由添加：addRoute('Home', route)
+    const childCall = mockAddRoute.mock.calls.find(
+      (call) => call[0] === 'Home'
     )
-    expect(layoutCall).toBeDefined()
-    expect(layoutCall[0].redirect).toBe('/dashboard')
+    expect(childCall).toBeDefined()
+    expect(childCall[1].path).toBe('/dashboard')
   })
 
-  it('generateRoutes 无菜单时应 redirect 到 /dashboard', async () => {
+  it('generateRoutes 无菜单时只添加 404 兜底', async () => {
     const store = usePermissionStore()
     getMenus.mockResolvedValue({ data: [] })
     getPermissions.mockResolvedValue({ data: [] })
 
     await store.generateRoutes()
 
-    const layoutCall = mockAddRoute.mock.calls.find(
-      (call) => call[0].path === '/'
+    // 无业务路由时，只添加 404 兜底（直接 addRoute，不是 Home 的子路由）
+    const homeChildCalls = mockAddRoute.mock.calls.filter(
+      (call) => call[0] === 'Home'
     )
-    expect(layoutCall[0].redirect).toBe('/dashboard')
+    expect(homeChildCalls).toHaveLength(0)
+    expect(mockAddRoute).toHaveBeenCalledTimes(1)
+    expect(mockAddRoute.mock.calls[0][0].path).toBe('/:pathMatch(.*)*')
   })
 
   it('resetPermission 应清空所有状态', () => {

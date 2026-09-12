@@ -38,12 +38,12 @@ export const usePermissionStore = defineStore('permission', () => {
     console.log('[Permission Store] Generated routes:', routes.map(r => `${r.path} (${r.name})`))
     console.log('[Permission Store] All available routes before adding:', router.getRoutes().map(r => `${r.path} [${r.name}]`))
 
-    // 4. Add generated routes directly to the router
-    // In Vue Router 4.x, use router.addRoute() instead of route.addRoute()
-    console.log('[Permission Store] Adding', routes.length, 'dynamic routes')
-    
+    // 4. Add generated routes as children of the Home route so they share Layout.
+    // All business pages must be under '/' to keep the sidebar mounted.
+    console.log('[Permission Store] Adding', routes.length, 'dynamic routes under Home')
+
     routes.forEach(route => {
-      router.addRoute(route)
+      router.addRoute('Home', route)
       console.log(`  [Permission Store] Added dynamic route: ${route.path}`)
     })
 
