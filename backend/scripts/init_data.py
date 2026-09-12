@@ -67,7 +67,7 @@ MENU_LEVEL1 = [
     {"perm_code": "inspection:task",   "perm_name": "巡检任务",   "perm_type": "menu", "route_path": "/inspection/task",   "component": "views/inspection/Task.vue",      "icon": "Calendar",  "sort_order": 6},
     {"perm_code": "repair:order",     "perm_name": "维修工单",   "perm_type": "menu", "route_path": "/repair/order",     "component": "views/repair/OrderList.vue",   "icon": "Tools",       "sort_order": 7},
     {"perm_code": "drill:event",       "perm_name": "消防演练",   "perm_type": "menu", "route_path": "/drill/event",       "component": "views/drill/Event.vue",          "icon": "Fire",      "sort_order": 8},
-    {"perm_code": "statistics:report", "perm_name": "统计报表",   "perm_type": "menu", "route_path": "/statistics/report", "component": "views/statistics/Report.vue",    "icon": "Trend",     "sort_order": 9},
+    {"perm_code": "statistics:report", "perm_name": "统计报表",   "perm_type": "menu", "route_path": "/statistics/report", "component": "Layout",                           "icon": "Trend",     "sort_order": 9},
     {"perm_code": "system:management", "perm_name": "系统管理",   "perm_type": "menu", "route_path": "/system",            "component": "Layout",                         "icon": "Setting",   "sort_order": 10},
 ]
 
@@ -78,6 +78,7 @@ MENU_LEVEL2 = [
     {"perm_code": "system:log", "perm_name": "登录日志", "perm_type": "menu", "route_path": "/system/login-log", "component": "views/system/LoginLog.vue", "icon": "Document", "sort_order": 3, "parent_code": "system:management"},
     {"perm_code": "system:org", "perm_name": "组织管理", "perm_type": "menu", "route_path": "/system/org", "component": "views/system/Org.vue", "icon": "OfficeBuilding", "sort_order": 4, "parent_code": "system:management"},
     # 统计报表子菜单
+    {"perm_code": "statistics:overview", "perm_name": "统计概览", "perm_type": "menu", "route_path": "/statistics/report", "component": "views/statistics/Report.vue", "icon": "Trend", "sort_order": 0, "parent_code": "statistics:report"},
     {"perm_code": "statistics:device_status", "perm_name": "设备完好率", "perm_type": "menu", "route_path": "/statistics/device-status", "component": "views/statistics/DeviceStatus.vue", "icon": "PieChart", "sort_order": 1, "parent_code": "statistics:report"},
     {"perm_code": "statistics:alarm_trend", "perm_name": "报警趋势", "perm_type": "menu", "route_path": "/statistics/alarm-trend", "component": "views/statistics/AlarmTrend.vue", "icon": "TrendCharts", "sort_order": 2, "parent_code": "statistics:report"},
     {"perm_code": "statistics:fault_top10", "perm_name": "故障TOP10", "perm_type": "menu", "route_path": "/statistics/fault-top10", "component": "views/statistics/FaultTop10.vue", "icon": "Histogram", "sort_order": 3, "parent_code": "statistics:report"},
@@ -166,7 +167,7 @@ ROLE_PERM_MAP = {
         "monitor:dashboard", "alarm:center", "device:archive", "statistics:report",
         "repair:order",
         # 统计报表子菜单
-        "statistics:device_status", "statistics:alarm_trend", "statistics:fault_top10", "statistics:inspection",
+        "statistics:overview", "statistics:device_status", "statistics:alarm_trend", "statistics:fault_top10", "statistics:inspection",
         # 按钮
         "monitor:view", "monitor:confirm",
         "alarm:view", "alarm:confirm", "alarm:silence", "alarm:reset", "alarm:handle",
@@ -186,7 +187,7 @@ ROLE_PERM_MAP = {
         # 菜单
         "device:archive", "inspection:task", "repair:order", "statistics:report",
         # 统计报表子菜单
-        "statistics:device_status", "statistics:alarm_trend", "statistics:fault_top10", "statistics:inspection",
+        "statistics:overview", "statistics:device_status", "statistics:alarm_trend", "statistics:fault_top10", "statistics:inspection",
         # 按钮
         "device:view", "device:repair",
         "inspection:execute",  # 仅可执行巡检，不可管理计划
