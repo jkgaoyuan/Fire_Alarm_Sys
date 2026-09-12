@@ -20,6 +20,42 @@ export function getOrganizationTree() {
   })
 }
 
+/**
+ * 创建组织节点
+ * @param {object} data
+ */
+export function createOrganization(data) {
+  return request({
+    url: '/organizations',
+    method: 'post',
+    data,
+  })
+}
+
+/**
+ * 更新组织节点
+ * @param {number} orgId
+ * @param {object} data
+ */
+export function updateOrganization(orgId, data) {
+  return request({
+    url: `/organizations/${orgId}`,
+    method: 'put',
+    data,
+  })
+}
+
+/**
+ * 删除组织节点
+ * @param {number} orgId
+ */
+export function deleteOrganization(orgId) {
+  return request({
+    url: `/organizations/${orgId}`,
+    method: 'delete',
+  })
+}
+
 // ========== 平面图配置（FR-017）==========
 
 /**

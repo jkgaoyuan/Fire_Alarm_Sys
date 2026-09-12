@@ -23,6 +23,7 @@ const viewComponents = {
   'views/system/User.vue': () => import('@/views/system/User.vue'),
   'views/system/Role.vue': () => import('@/views/system/Role.vue'),
   'views/system/LoginLog.vue': () => import('@/views/system/LoginLog.vue'),
+  'views/system/Org.vue': () => import('@/views/system/Org.vue'),
 }
 
 // 兼容测试环境注入 mock modules（键格式为 '@/views/...'）
