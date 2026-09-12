@@ -8,10 +8,6 @@ import pytest
 from httpx import AsyncClient
 from datetime import datetime, timezone
 
-# 测试依赖 fixtures
-pytest_plugins = ['tests.conftest']
-
-
 @pytest.mark.e2e
 class TestLinkageE2E:
     """联动预案完整业务流程测试"""
@@ -102,16 +98,17 @@ class TestLinkageE2E:
         assert simulate_response.status_code == 200
         
         simulate_data = simulate_response.json()
-        assert "executed_at" in simulate_data
-        assert "logs" in simulate_data
-        
+        assert "items" in simulate_data
+        assert len(simulate_data["items"]) > 0
+        assert "executed_at" in simulate_data["items"][0]
+
         # 6. 删除预案 (应该失败，因为已经有日志)
         delete_response = client.delete(
             f"/api/v1/linkage-plans/{plan_id}",
             headers={"Authorization": f"Bearer {access_token}"}
         )
         assert delete_response.status_code == 400
-        assert "Has execution logs" in delete_response.json()["detail"]
+        assert "已有执行日志" in delete_response.json()["detail"]
         
         print("✅ Full CRUD workflow completed successfully!")
         

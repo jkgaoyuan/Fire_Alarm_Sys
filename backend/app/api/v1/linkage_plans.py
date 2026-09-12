@@ -13,8 +13,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from app.core.dependencies import get_db, require_permission
+from app.core.dependencies import get_db, require_permission, get_current_active_user
 from app.models.linkage import LinkagePlan, AlarmLinkageLog
+from app.models.user import User
+from app.schemas.auth import ResponseModel
 from app.schemas.linkage import (
     LinkagePlanCreate,
     LinkagePlanUpdate,
@@ -107,10 +109,11 @@ async def get_linkage_plan_detail(plan_id: int, db: AsyncSession = Depends(get_d
 )
 async def create_linkage_plan(
     data: LinkagePlanCreate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_active_user),
 ):
     """创建新预案"""
-    plan = LinkagePlan(**data.model_dump())
+    plan = LinkagePlan(**data.model_dump(), created_by=user.id)
     db.add(plan)
     await db.commit()
     await db.refresh(plan)

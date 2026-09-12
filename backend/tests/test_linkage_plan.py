@@ -66,18 +66,15 @@ class TestLinkagePlanCRUD:
             actions=[]
         )
         
-        # Mock execute result properly
-        mock_scalars = MagicMock()
-        mock_scalars.one_or_none.return_value = plan
-        
+        # Mock execute result properly (CRUDBase.get uses scalar_one_or_none)
         mock_execute_result = MagicMock()
-        mock_execute_result.scalars = MagicMock(return_value=mock_scalars)
-        
+        mock_execute_result.scalar_one_or_none.return_value = plan
+
         mock_db.execute = AsyncMock(return_value=mock_execute_result)
-        
+
         from app.crud.linkage import linkage_plan_crud
         result = await linkage_plan_crud.get(mock_db, 1)
-        
+
         assert result is not None
         assert result.id == 1
         assert result.plan_name == "测试预案"
