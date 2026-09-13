@@ -137,14 +137,18 @@ async function loadAll() {
       getTop10FaultDevices(),
     ])
 
-    const ov = overviewRes.data || {}
+    // ⚠️ 维修统计接口返回的是**裸数据对象**，不是统一信封 {code, message, data}：
+    // backend/app/api/v1/repair.py 的这 4 个端点都是直接 return（连 response_model
+    // 都没包 Response[...]）。这里此前写成 `overviewRes.data`，取到 undefined 后
+    // 一路走默认值，页面 4 项指标恒为 0/空——而后端其实有数据。
+    const ov = overviewRes || {}
     overview.total_orders = ov.total_orders || 0
     overview.avg_repair_hours = ov.avg_repair_hours || 0
     overview.status_distribution = ov.status_distribution || []
 
-    workload.value = (workloadRes.data || {}).items || []
-    faultTypes.value = (faultRes.data || {}).items || []
-    top10Devices.value = (top10Res.data || {}).items || []
+    workload.value = (workloadRes || {}).items || []
+    faultTypes.value = (faultRes || {}).items || []
+    top10Devices.value = (top10Res || {}).items || []
   } catch (err) {
     ElMessage.error(err.message || '加载统计数据失败')
   } finally {
