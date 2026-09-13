@@ -8,6 +8,7 @@ import pytest
 from app.core.security import create_access_token, get_password_hash, verify_password
 from app.models.permission import Permission
 from app.models.user import Role, User
+from tests.auth_helpers import create_user_with_perms
 
 
 async def _create_chief_user(db_session, with_user_perm: bool = True):
@@ -398,3 +399,76 @@ async def test_user_list_keyword_filter(client, db_session):
     assert data["code"] == 200
     assert data["data"]["total"] == 1
     assert data["data"]["items"][0]["real_name"] == "搜索目标"
+
+
+@pytest.mark.asyncio
+async def test_user_list_permission_filter(client, db_session):
+    """
+    TC-USER-006: 用户列表可按「是否持有某权限码」过滤。
+
+    用途：派单弹窗只能列出真正能接手的人（持有 `repair:repair` 的用户）。
+    不过滤的死结：主管可以把工单派给值班员（下拉框原先只筛 `status == "active"`），
+    而值班员没有 `repair:repair`，「开始维修」和「完成维修」都会 403——
+    工单被派出去就卡在那儿，谁也动不了。
+    """
+    chief = await _create_chief_user(db_session)
+    headers = await _auth_headers(chief)
+
+    await create_user_with_perms(db_session, "pf_can", ["repair:repair"])
+    await create_user_with_perms(db_session, "pf_cannot", ["repair:view"])
+
+    response = await client.get(
+        "/api/v1/users", params={"permission": "repair:repair"}, headers=headers
+    )
+    data = response.json()
+
+    assert data["code"] == 200
+    usernames = {item["username"] for item in data["data"]["items"]}
+    assert "pf_can" in usernames
+    assert "pf_cannot" not in usernames, "不持有 repair:repair 的人不该出现在可选维修人里"
+
+
+@pytest.mark.asyncio
+async def test_permission_filter_applies_to_total(client, db_session):
+    """
+    TC-USER-007: 权限过滤必须同时作用于 `total`，不能只筛 items。
+
+    不修会怎样：items 已过滤、total 用未过滤的计数，前端分页条会显示
+    「共 3 条」却只给出 1 行——巡检任务列表踩过同一个坑
+    （count 与 items 用了两套条件）。
+    """
+    chief = await _create_chief_user(db_session)
+    headers = await _auth_headers(chief)
+
+    await create_user_with_perms(db_session, "pf2_can", ["repair:repair"])
+    await create_user_with_perms(db_session, "pf2_cannot", ["repair:view"])
+
+    ref = await client.get("/api/v1/users", headers=headers)
+    unmatched = ref.json()["data"]["total"]  # 不加过滤时的总数（3）
+
+    response = await client.get(
+        "/api/v1/users", params={"permission": "repair:repair"}, headers=headers
+    )
+    body = response.json()
+
+    assert body["data"]["total"] == len(body["data"]["items"]) == 1
+    assert body["data"]["total"] < unmatched, "过滤后 total 未收窄，说明计数没跟着筛"
+
+
+@pytest.mark.asyncio
+async def test_permission_filter_is_optional(client, db_session):
+    """
+    TC-USER-008: 省略 `permission` 参数时行为不变（向后兼容）。
+
+    这个参数是**新增**的，既有调用方（用户管理页等）不传它，必须照旧拿到全量。
+    """
+    chief = await _create_chief_user(db_session)
+    headers = await _auth_headers(chief)
+
+    await create_user_with_perms(db_session, "pf3_can", ["repair:repair"])
+    await create_user_with_perms(db_session, "pf3_cannot", ["repair:view"])
+
+    response = await client.get("/api/v1/users", headers=headers)
+    usernames = {item["username"] for item in response.json()["data"]["items"]}
+
+    assert {"pf3_can", "pf3_cannot"} <= usernames

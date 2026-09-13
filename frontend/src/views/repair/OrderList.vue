@@ -86,7 +86,8 @@
           <template #default="{ row }">
             <el-button link type="primary" @click="handleView(row)">详情</el-button>
             <el-button
-              v-if="row.status === 'pending' && isChief"
+              v-if="row.status === 'pending'"
+              v-permission="'repair:assign'"
               link
               type="warning"
               @click="handleAssign(row)"
@@ -95,6 +96,7 @@
             </el-button>
             <el-button
               v-if="row.status === 'assigned'"
+              v-permission="'repair:repair'"
               link
               type="success"
               @click="handleStartRepair(row)"
@@ -103,6 +105,7 @@
             </el-button>
             <el-button
               v-if="row.status === 'repairing'"
+              v-permission="'repair:repair'"
               link
               type="primary"
               @click="handleComplete(row)"
@@ -111,6 +114,7 @@
             </el-button>
             <el-button
               v-if="row.status === 'pending_accept'"
+              v-permission="'repair:accept'"
               link
               type="success"
               @click="handleAccept(row)"
@@ -119,6 +123,7 @@
             </el-button>
             <el-button
               v-if="row.status === 'pending_accept'"
+              v-permission="'repair:accept'"
               link
               type="danger"
               @click="handleReturn(row)"
@@ -127,9 +132,10 @@
             </el-button>
             <el-button
               v-if="row.status === 'returned'"
+              v-permission="'repair:repair'"
               link
               type="primary"
-              @click="handleComplete(row)"
+              @click="handleStartRepair(row)"
             >
               重新维修
             </el-button>
@@ -209,21 +215,18 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref, computed } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { useAuthStore } from '@/stores/auth'
 import OrderForm from './OrderForm.vue'
 import OrderDetail from './OrderDetail.vue'
-import { getRepairOrders, assignRepairOrder, completeRepairOrder, acceptRepairOrder, returnRepairOrder } from '@/api/repair'
+import { getRepairOrders, assignRepairOrder, startRepairOrder, completeRepairOrder, acceptRepairOrder, returnRepairOrder } from '@/api/repair'
 import { getUsers } from '@/api/user'
 
-const authStore = useAuthStore()
-
-const isChief = computed(() => {
-  const roles = authStore.userInfo?.roles || []
-  // login 接口返回 roles 为字符串数组，getMe 返回对象数组，需兼容两种格式
-  return roles.some((r) => (typeof r === 'string' ? r : r.role_code) === 'chief')
-})
+// 操作列按钮一律用 v-permission 判**权限码**（repair:assign / repair:repair /
+// repair:accept），与后端 require_permission 同口径。
+// 此前「派单」判的是 `role_code === 'chief'`——前端判角色、后端判权限码，
+// 两套口径：主管被撤销 repair:assign 后按钮照显示（点击才 403），
+// 非 chief 角色被授予 repair:assign 后按钮反而被藏起来。
 
 const loading = ref(false)
 const orderList = ref([])
@@ -350,7 +353,14 @@ function handleView(row) {
 async function loadRepairerOptions() {
   repairerLoading.value = true
   try {
-    const res = await getUsers({ page: 1, page_size: 100 })
+    // 只列**能真正接手**的人：后端按权限码过滤（不传则返回全量）。
+    // 不过滤会留下死结——把工单派给没有 repair:repair 的人（如值班员），
+    // 对方连「开始维修」都点不动，工单被派出去就卡住。
+    const res = await getUsers({
+      page: 1,
+      page_size: 100,
+      permission: 'repair:repair',
+    })
     const data = res.data || {}
     const users = data.items || []
     // 只展示活跃用户，选项中标注角色便于识别
@@ -389,19 +399,30 @@ async function confirmAssign() {
 }
 
 async function handleStartRepair(row) {
+  // 同时服务两个入口：已派单工单的「开始维修」、已退回工单的「重新维修」。
+  // 两者在状态机上都是 → repairing（REPAIR_ORDER_STATUS_TRANSITIONS）。
+  const isReturned = row.status === 'returned'
   try {
-    await ElMessageBox.confirm('确认开始维修？', '提示', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning',
-    })
-    
-    // 开始维修 = 完成派单确认，状态变为 repairing
-    // 这里简化处理，实际可能需要单独接口
-    ElMessage.info('开始维修功能待实现')
+    await ElMessageBox.confirm(
+      isReturned ? '确认重新开始维修？' : '确认开始维修？',
+      '提示',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    )
+
+    const res = await startRepairOrder(row.id)
+    if (res.code === 200) {
+      ElMessage.success(isReturned ? '已重新开始维修' : '已开始维修')
+      loadOrders()
+    } else {
+      ElMessage.error(res.message || '操作失败')
+    }
   } catch (err) {
     if (err !== 'cancel') {
-      ElMessage.error('操作失败')
+      ElMessage.error(err.message || '操作失败')
     }
   }
 }

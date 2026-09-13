@@ -15,7 +15,8 @@ from app.core.security import get_password_hash
 from app.crud.role import role_crud
 from app.crud.user import user_crud
 from app.models.organization import Organization
-from app.models.user import User
+from app.models.permission import Permission
+from app.models.user import Role, User
 
 
 async def get_user_with_roles(db: AsyncSession, user_id: int) -> User | None:
@@ -96,10 +97,16 @@ async def get_users_with_pagination(
     page: int = 1,
     page_size: int = 10,
     keyword: str | None = None,
+    permission: str | None = None,
 ) -> tuple[list[User], int]:
     """
     分页查询用户列表，支持按用户名/真实姓名/手机号模糊搜索。
     返回 (用户列表, 总数)
+
+    `permission` 按「是否持有某权限码」过滤（经角色折算，与 `/users/me/permissions`
+    同一口径）。用于「只在候选人里列出真正能干这件事的人」——如派单弹窗只列
+    持有 `repair:repair` 的用户，避免把工单派给无法开始/完成维修的人。
+    条件同时作用于 items 与 count，否则会出现「共 N 条却只给 M 行」的分页错位。
     """
     stmt = (
         select(User)
@@ -114,6 +121,11 @@ async def get_users_with_pagination(
             User.username.ilike(f"%{keyword}%")
             | User.real_name.ilike(f"%{keyword}%")
             | User.phone.ilike(f"%{keyword}%")
+        )
+
+    if permission:
+        filters.append(
+            User.roles.any(Role.permissions.any(Permission.perm_code == permission))
         )
 
     if filters:

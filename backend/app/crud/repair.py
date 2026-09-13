@@ -8,7 +8,7 @@ from sqlalchemy import select, func, and_, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.repair import RepairOrder
+from app.models.repair import REPAIR_ORDER_STATUS_TRANSITIONS, RepairOrder
 from app.models.device import Device
 from app.models.user import User
 from app.schemas.repair import RepairOrderCreate, RepairOrderUpdate
@@ -164,6 +164,32 @@ class RepairOrderCRUD:
         
         return db_obj
     
+    async def start(self, id: int) -> Optional[RepairOrder]:
+        """
+        开始维修：`assigned` / `returned` → `repairing`。
+
+        可转移性查 `REPAIR_ORDER_STATUS_TRANSITIONS` 而不是硬编码状态字符串——
+        状态机表是唯一真相源，另写一套判断迟早与它漂移
+        （此前 `assigned → repairing`、`returned → repairing` 两条转移在表里
+        定义着，却没有任何代码实现，工单卡在「已派单」走不动）。
+
+        归属校验（只有被指派的维修人本人能开始）在端点做，与 `complete` 同口径。
+        """
+        db_obj = await self.get(id)
+        if not db_obj:
+            return None
+
+        if "repairing" not in REPAIR_ORDER_STATUS_TRANSITIONS.get(db_obj.status, ()):
+            raise ValueError("只能开始已派单或已退回的工单")
+
+        db_obj.status = "repairing"
+        db_obj.updated_at = datetime.now()
+
+        await self.db.commit()
+        await self.db.refresh(db_obj)
+
+        return db_obj
+
     async def complete(self, id: int, repair_result: str) -> Optional[RepairOrder]:
         """完成维修"""
         db_obj = await self.get(id)

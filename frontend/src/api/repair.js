@@ -38,6 +38,14 @@ export function assignRepairOrder(id, data) {
   })
 }
 
+// 开始维修（assigned / returned → repairing）
+export function startRepairOrder(id) {
+  return request({
+    url: `/repair-orders/${id}/start`,
+    method: 'put',
+  })
+}
+
 // 完成维修
 export function completeRepairOrder(id, data) {
   return request({

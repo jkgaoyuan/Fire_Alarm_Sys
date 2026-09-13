@@ -31,6 +31,55 @@ from app.schemas.repair import (
 router = APIRouter()
 
 
+# ==================== 响应序列化 ====================
+
+def _order_out(order) -> RepairOrderResponse:
+    """
+    把 ORM 工单对象转成响应体。
+
+    此前这段 25 行的构造在 7 个端点 + 列表循环里各抄了一份，字段一多必然漂移；
+    而漏字段是**静默的**——少写一个就是 None，没有报错，前端显示空白。
+
+    ⚠️ 关系字段（device / reporter / repairer / acceptor）必须已被预加载。
+    这里用 `if xxx else None` 只是兜底：异步会话下访问**未加载**的关系会抛
+    MissingGreenlet，兜底救不了。所以调用方必须经 `crud.get()`（内含 4 个
+    selectinload），不要自己拼裸 `select(RepairOrder)`
+    （2026-09-13 详情接口实际踩过，线上 500）。
+    """
+    return RepairOrderResponse(
+        id=order.id,
+        order_no=order.order_no,
+        device_id=order.device_id,
+        alarm_id=order.alarm_id,
+        inspection_record_id=order.inspection_record_id,
+        fault_desc=order.fault_desc,
+        status=order.status,
+        reporter_id=order.reporter_id,
+        repairer_id=order.repairer_id,
+        acceptor_id=order.acceptor_id,
+        assigned_at=order.assigned_at,
+        completed_at=order.completed_at,
+        accepted_at=order.accepted_at,
+        repair_result=order.repair_result,
+        return_reason=order.return_reason,
+        created_by=order.created_by,
+        device_name=order.device.device_name if order.device else None,
+        device_code=order.device.device_code if order.device else None,
+        reporter_name=order.reporter.real_name if order.reporter else None,
+        repairer_name=order.repairer.real_name if order.repairer else None,
+        acceptor_name=order.acceptor.real_name if order.acceptor else None,
+    )
+
+
+# ⚠️ 信封（`Response(code=...)`）必须在端点里保持**字面量**，不要顺手把它也抽成
+# 一个 `return _envelope(db_obj)` 式的辅助函数（本文件曾经这么试过）：
+# `tests/test_api_envelope_contract.py` 是 AST 静态扫描，只认字面量
+# `Response(code=...)` 或含 `code` 键的 dict，调用辅助函数一律判 `bare`（裸返回）。
+# 守卫刻意不做「已知返回信封的辅助函数」白名单——那等于给它开一个可以返回
+# 任何东西的后门。所以这里只抽 `data` 部分，端点写成
+# `return Response(code=200, message="success", data=_order_out(db_obj))`。
+
+
 # ==================== CRUD 接口 ====================
 
 @router.get(
@@ -66,33 +115,7 @@ async def list_repair_orders(
     )
     
     # 转换为响应格式
-    items_response = []
-    for item in items:
-        resp = RepairOrderResponse(
-            id=item.id,
-            order_no=item.order_no,
-            device_id=item.device_id,
-            alarm_id=item.alarm_id,
-            inspection_record_id=item.inspection_record_id,
-            fault_desc=item.fault_desc,
-            status=item.status,
-            reporter_id=item.reporter_id,
-            repairer_id=item.repairer_id,
-            acceptor_id=item.acceptor_id,
-            assigned_at=item.assigned_at,
-            completed_at=item.completed_at,
-            accepted_at=item.accepted_at,
-            repair_result=item.repair_result,
-            return_reason=item.return_reason,
-            created_by=item.created_by,
-            device_name=item.device.device_name if item.device else None,
-            device_code=item.device.device_code if item.device else None,
-            reporter_name=item.reporter.real_name if item.reporter else None,
-            repairer_name=item.repairer.real_name if item.repairer else None,
-            acceptor_name=item.acceptor.real_name if item.acceptor else None,
-        )
-        items_response.append(resp)
-    
+    items_response = [_order_out(item) for item in items]
     total_pages = (total + page_size - 1) // page_size
     
     return Response(
@@ -127,33 +150,7 @@ async def create_repair_order(
     # 重新查询以获取关联信息
     db_obj = await crud.get(db_obj.id)
     
-    return Response(
-        code=200,
-        message="success",
-        data=RepairOrderResponse(
-            id=db_obj.id,
-            order_no=db_obj.order_no,
-            device_id=db_obj.device_id,
-            alarm_id=db_obj.alarm_id,
-            inspection_record_id=db_obj.inspection_record_id,
-            fault_desc=db_obj.fault_desc,
-            status=db_obj.status,
-            reporter_id=db_obj.reporter_id,
-            repairer_id=db_obj.repairer_id,
-            acceptor_id=db_obj.acceptor_id,
-            assigned_at=db_obj.assigned_at,
-            completed_at=db_obj.completed_at,
-            accepted_at=db_obj.accepted_at,
-            repair_result=db_obj.repair_result,
-            return_reason=db_obj.return_reason,
-            created_by=db_obj.created_by,
-            device_name=db_obj.device.device_name if db_obj.device else None,
-            device_code=db_obj.device.device_code if db_obj.device else None,
-            reporter_name=db_obj.reporter.real_name if db_obj.reporter else None,
-            repairer_name=db_obj.repairer.real_name if db_obj.repairer else None,
-            acceptor_name=db_obj.acceptor.real_name if db_obj.acceptor else None,
-        ),
-    )
+    return Response(code=200, message="success", data=_order_out(db_obj))
 
 
 @router.get(
@@ -179,33 +176,7 @@ async def get_repair_order(
             detail="维修工单不存在"
         )
     
-    return Response(
-        code=200,
-        message="success",
-        data=RepairOrderResponse(
-            id=db_obj.id,
-            order_no=db_obj.order_no,
-            device_id=db_obj.device_id,
-            alarm_id=db_obj.alarm_id,
-            inspection_record_id=db_obj.inspection_record_id,
-            fault_desc=db_obj.fault_desc,
-            status=db_obj.status,
-            reporter_id=db_obj.reporter_id,
-            repairer_id=db_obj.repairer_id,
-            acceptor_id=db_obj.acceptor_id,
-            assigned_at=db_obj.assigned_at,
-            completed_at=db_obj.completed_at,
-            accepted_at=db_obj.accepted_at,
-            repair_result=db_obj.repair_result,
-            return_reason=db_obj.return_reason,
-            created_by=db_obj.created_by,
-            device_name=db_obj.device.device_name if db_obj.device else None,
-            device_code=db_obj.device.device_code if db_obj.device else None,
-            reporter_name=db_obj.reporter.real_name if db_obj.reporter else None,
-            repairer_name=db_obj.repairer.real_name if db_obj.repairer else None,
-            acceptor_name=db_obj.acceptor.real_name if db_obj.acceptor else None,
-        ),
-    )
+    return Response(code=200, message="success", data=_order_out(db_obj))
 
 
 # ==================== 状态流转接口 ====================
@@ -242,33 +213,58 @@ async def assign_repair_order(
     # 重新查询以获取关联信息
     db_obj = await crud.get(db_obj.id)
     
-    return Response(
-        code=200,
-        message="success",
-        data=RepairOrderResponse(
-            id=db_obj.id,
-            order_no=db_obj.order_no,
-            device_id=db_obj.device_id,
-            alarm_id=db_obj.alarm_id,
-            inspection_record_id=db_obj.inspection_record_id,
-            fault_desc=db_obj.fault_desc,
-            status=db_obj.status,
-            reporter_id=db_obj.reporter_id,
-            repairer_id=db_obj.repairer_id,
-            acceptor_id=db_obj.acceptor_id,
-            assigned_at=db_obj.assigned_at,
-            completed_at=db_obj.completed_at,
-            accepted_at=db_obj.accepted_at,
-            repair_result=db_obj.repair_result,
-            return_reason=db_obj.return_reason,
-            created_by=db_obj.created_by,
-            device_name=db_obj.device.device_name if db_obj.device else None,
-            device_code=db_obj.device.device_code if db_obj.device else None,
-            reporter_name=db_obj.reporter.real_name if db_obj.reporter else None,
-            repairer_name=db_obj.repairer.real_name if db_obj.repairer else None,
-            acceptor_name=db_obj.acceptor.real_name if db_obj.acceptor else None,
-        ),
-    )
+    return Response(code=200, message="success", data=_order_out(db_obj))
+
+
+@router.put(
+    "/repair-orders/{id}/start",
+    response_model=Response[RepairOrderResponse],
+    summary="开始维修",
+    # repair:repair = 「维修填报」。与下面保留的**归属检查**（只有被指派的
+    # 维修人本人能开始）叠加：权限码管「这类操作能不能做」，归属检查管
+    # 「这一单归不归你」。两者语义不同，都需要——口径与 /complete 一致。
+    dependencies=[Depends(require_permission("repair:repair"))],
+)
+async def start_repair_order(
+    id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """开始维修（`assigned` / `returned` → `repairing`）"""
+    crud = RepairOrderCRUD(db)
+
+    # 检查是否为维修人员
+    db_obj_check = await crud.get(id)
+    if not db_obj_check:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="维修工单不存在"
+        )
+
+    if db_obj_check.repairer_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="仅维修人员可开始维修"
+        )
+
+    try:
+        db_obj = await crud.start(id)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+    if not db_obj:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="维修工单不存在"
+        )
+
+    # 重新查询以获取关联信息
+    db_obj = await crud.get(db_obj.id)
+
+    return Response(code=200, message="success", data=_order_out(db_obj))
 
 
 @router.put(
@@ -320,33 +316,7 @@ async def complete_repair_order(
     # 重新查询以获取关联信息
     db_obj = await crud.get(db_obj.id)
     
-    return Response(
-        code=200,
-        message="success",
-        data=RepairOrderResponse(
-            id=db_obj.id,
-            order_no=db_obj.order_no,
-            device_id=db_obj.device_id,
-            alarm_id=db_obj.alarm_id,
-            inspection_record_id=db_obj.inspection_record_id,
-            fault_desc=db_obj.fault_desc,
-            status=db_obj.status,
-            reporter_id=db_obj.reporter_id,
-            repairer_id=db_obj.repairer_id,
-            acceptor_id=db_obj.acceptor_id,
-            assigned_at=db_obj.assigned_at,
-            completed_at=db_obj.completed_at,
-            accepted_at=db_obj.accepted_at,
-            repair_result=db_obj.repair_result,
-            return_reason=db_obj.return_reason,
-            created_by=db_obj.created_by,
-            device_name=db_obj.device.device_name if db_obj.device else None,
-            device_code=db_obj.device.device_code if db_obj.device else None,
-            reporter_name=db_obj.reporter.real_name if db_obj.reporter else None,
-            repairer_name=db_obj.repairer.real_name if db_obj.repairer else None,
-            acceptor_name=db_obj.acceptor.real_name if db_obj.acceptor else None,
-        ),
-    )
+    return Response(code=200, message="success", data=_order_out(db_obj))
 
 
 @router.put(
@@ -380,33 +350,7 @@ async def accept_repair_order(
     # 重新查询以获取关联信息
     db_obj = await crud.get(db_obj.id)
     
-    return Response(
-        code=200,
-        message="success",
-        data=RepairOrderResponse(
-            id=db_obj.id,
-            order_no=db_obj.order_no,
-            device_id=db_obj.device_id,
-            alarm_id=db_obj.alarm_id,
-            inspection_record_id=db_obj.inspection_record_id,
-            fault_desc=db_obj.fault_desc,
-            status=db_obj.status,
-            reporter_id=db_obj.reporter_id,
-            repairer_id=db_obj.repairer_id,
-            acceptor_id=db_obj.acceptor_id,
-            assigned_at=db_obj.assigned_at,
-            completed_at=db_obj.completed_at,
-            accepted_at=db_obj.accepted_at,
-            repair_result=db_obj.repair_result,
-            return_reason=db_obj.return_reason,
-            created_by=db_obj.created_by,
-            device_name=db_obj.device.device_name if db_obj.device else None,
-            device_code=db_obj.device.device_code if db_obj.device else None,
-            reporter_name=db_obj.reporter.real_name if db_obj.reporter else None,
-            repairer_name=db_obj.repairer.real_name if db_obj.repairer else None,
-            acceptor_name=db_obj.acceptor.real_name if db_obj.acceptor else None,
-        ),
-    )
+    return Response(code=200, message="success", data=_order_out(db_obj))
 
 
 @router.put(
@@ -441,33 +385,7 @@ async def return_repair_order(
     # 重新查询以获取关联信息
     db_obj = await crud.get(db_obj.id)
     
-    return Response(
-        code=200,
-        message="success",
-        data=RepairOrderResponse(
-            id=db_obj.id,
-            order_no=db_obj.order_no,
-            device_id=db_obj.device_id,
-            alarm_id=db_obj.alarm_id,
-            inspection_record_id=db_obj.inspection_record_id,
-            fault_desc=db_obj.fault_desc,
-            status=db_obj.status,
-            reporter_id=db_obj.reporter_id,
-            repairer_id=db_obj.repairer_id,
-            acceptor_id=db_obj.acceptor_id,
-            assigned_at=db_obj.assigned_at,
-            completed_at=db_obj.completed_at,
-            accepted_at=db_obj.accepted_at,
-            repair_result=db_obj.repair_result,
-            return_reason=db_obj.return_reason,
-            created_by=db_obj.created_by,
-            device_name=db_obj.device.device_name if db_obj.device else None,
-            device_code=db_obj.device.device_code if db_obj.device else None,
-            reporter_name=db_obj.reporter.real_name if db_obj.reporter else None,
-            repairer_name=db_obj.repairer.real_name if db_obj.repairer else None,
-            acceptor_name=db_obj.acceptor.real_name if db_obj.acceptor else None,
-        ),
-    )
+    return Response(code=200, message="success", data=_order_out(db_obj))
 
 
 # ==================== 统计接口 ====================

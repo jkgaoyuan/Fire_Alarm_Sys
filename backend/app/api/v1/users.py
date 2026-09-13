@@ -129,6 +129,9 @@ async def get_users(
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
     keyword: str | None = Query(None),
+    permission: str | None = Query(
+        None, description="只返回持有该权限码的用户（如 repair:repair）"
+    ),
     db: AsyncSession = Depends(get_db),
     _=Depends(require_permission("system:user")),
 ):
@@ -138,6 +141,7 @@ async def get_users(
         page=page,
         page_size=page_size,
         keyword=keyword,
+        permission=permission,
     )
 
     items = [_user_to_out(user) for user in users]
