@@ -89,7 +89,7 @@ PRD: 3.6 FR-032
               <span>已完成：{{ row.completed_tasks || 0 }}</span>
               <span>漏检：{{ row.missed_tasks || 0 }}</span>
               <el-progress
-                :percentage="(row.completion_rate * 100).toFixed(1)"
+                :percentage="Number((row.completion_rate * 100).toFixed(1))"
                 :color="getProgressColor(row.completion_rate)"
                 :format="() => `完成率 ${(row.completion_rate * 100).toFixed(1)}%`"
                 style="margin-top: 4px"
@@ -301,13 +301,13 @@ function cycleTypeLabel(type) {
 
 function cycleTypeTag(type) {
   const map = {
-    daily: '',
+    daily: undefined,
     weekly: 'warning',
-    monthly: '',
-    quarterly: '',
+    monthly: undefined,
+    quarterly: undefined,
     yearly: 'success',
   }
-  return map[type] || ''
+  return map[type]
 }
 
 function formatDate(dateStr) {

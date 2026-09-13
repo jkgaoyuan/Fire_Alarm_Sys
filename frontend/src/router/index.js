@@ -26,6 +26,15 @@ export function resetInitializeRoutes() {
   initPromise = null
 }
 
+/** 根据用户权限返回默认落地页（第一个可用菜单），无权限则返回 /403 */
+function getDefaultPath(permStore) {
+  console.log('[Router Debug] menus:', JSON.parse(JSON.stringify(permStore.menus)))
+  console.log('[Router Debug] flatMenuPaths:', permStore.flatMenuPaths)
+  const firstPath = permStore.flatMenuPaths.find((p) => p !== '/')
+  console.log('[Router Debug] firstPath:', firstPath)
+  return firstPath || '/403'
+}
+
 const router = createRouter({
   history: createWebHistory(),
   routes: staticRoutes,
@@ -36,6 +45,7 @@ const router = createRouter({
 
 // ✅ 完整修复的路由守卫（P0-005）
 router.beforeEach(async (to, from) => {
+  console.log('[Router Debug] beforeEach triggered:', to.path, 'isRoutesLoaded:', usePermissionStore().isRoutesLoaded)
   // 白名单直接放行
   if (whiteList.includes(to.path)) {
     return true
@@ -59,9 +69,9 @@ router.beforeEach(async (to, from) => {
         return '/login'
       }
 
-      // Root path is already in staticRoutes, no need to re-navigate
+      // 根路径动态重定向到用户第一个可用菜单，避免写死 /monitor/dashboard
       if (to.path === '/') {
-        return true
+        return getDefaultPath(permStore)
       }
 
       // If the current navigation has no matched routes (production: dynamic routes
@@ -79,9 +89,9 @@ router.beforeEach(async (to, from) => {
 
   // 路由已加载完成，进行正常权限校验
 
-  // 根路径直接允许（会显示 dashboard）
+  // 根路径动态重定向到用户第一个可用菜单
   if (to.path === '/') {
-    return true
+    return getDefaultPath(permStore)
   }
 
   // 校验目标路由权限
@@ -89,7 +99,13 @@ router.beforeEach(async (to, from) => {
   // 回退到 to.path（无匹配时的兜底）
   const checkPath = to.matched.at(-1)?.path || to.path
 
-  const hasPermission = permStore.flatMenuPaths.includes(checkPath)
+  // 隐藏子页面复用父菜单权限（如 /inspection/plan 从 /inspection/task 跳转进入）
+  const subPagePermissionMap = {
+    '/inspection/plan': '/inspection/task',
+  }
+  const effectivePath = subPagePermissionMap[checkPath] || checkPath
+
+  const hasPermission = permStore.flatMenuPaths.includes(effectivePath)
 
   if (hasPermission) {
     return true

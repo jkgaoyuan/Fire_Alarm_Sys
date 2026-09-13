@@ -28,7 +28,7 @@
         <el-cascader
           v-model="formData.org_id"
           :options="orgOptions"
-          :props="{ label: 'org_name', value: 'id', children: 'children' }"
+          :props="{ label: 'org_name', value: 'id', children: 'children', emitPath: false }"
           placeholder="选择区域"
           clearable
         />
@@ -111,7 +111,7 @@
 </template>
 
 <script setup>
-import { reactive, ref, onMounted } from 'vue'
+import { computed, reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { createInspectionPlan, updateInspectionPlan } from '@/api/inspection'
 import { getOrganizationTree } from '@/api/organization'
@@ -137,8 +137,13 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue', 'success'])
 
 const formRef = ref()
-const visible = ref(false)
 const submitLoading = ref(false)
+
+// v-model 同步：把外部 modelValue 双向绑定到弹窗 visible
+const visible = computed({
+  get: () => props.modelValue,
+  set: (val) => emit('update:modelValue', val),
+})
 
 const users = ref([])
 

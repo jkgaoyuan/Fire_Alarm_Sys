@@ -26,11 +26,11 @@ export const staticRoutes = [
   },
 
   // --- 根路径：Layout 壳，所有业务页面均作为其子路由 ---
+  // 注意：不要在这里写死 redirect，由路由守卫根据用户权限动态重定向
   {
     path: '/',
     name: 'Home',
     component: () => import('@/components/Layout.vue'),
-    redirect: '/monitor/dashboard',
     children: [
       {
         path: '/monitor/dashboard',
@@ -41,6 +41,14 @@ export const staticRoutes = [
           icon: 'Monitor',
           order: 1,
         },
+      },
+      // 隐藏子页面：巡检计划管理（从巡检任务跳转，复用 inspection:task 菜单权限）
+      {
+        path: '/inspection/plan',
+        name: 'InspectionPlan',
+        component: () => import('@/views/inspection/Plan.vue'),
+        hidden: true,
+        meta: { title: '巡检计划管理' },
       },
     ],
   },

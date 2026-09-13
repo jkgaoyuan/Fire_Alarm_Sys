@@ -75,7 +75,7 @@ request.interceptors.response.use(
     const { data } = response
     // 统一响应格式：{ code, message, data, timestamp }
     if (data && typeof data.code === 'number') {
-      if (data.code === 200) {
+      if (data.code >= 200 && data.code < 300) {
         return data
       }
       // 业务错误（非 401/403）由调用方处理

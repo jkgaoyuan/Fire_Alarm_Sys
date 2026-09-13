@@ -86,7 +86,7 @@
           <template #default="{ row }">
             <el-button link type="primary" @click="handleView(row)">详情</el-button>
             <el-button
-              v-if="row.status === 'pending'"
+              v-if="row.status === 'pending' && isChief"
               link
               type="warning"
               @click="handleAssign(row)"
@@ -161,15 +161,69 @@
       :order="currentOrder"
       @success="loadOrders"
     />
+
+    <!-- 派单弹窗 -->
+    <el-dialog
+      v-model="assignDialogVisible"
+      title="派单"
+      width="460px"
+      destroy-on-close
+      :close-on-click-modal="false"
+    >
+      <el-form
+        ref="assignFormRef"
+        :model="assignForm"
+        :rules="assignRules"
+        label-width="100px"
+      >
+        <el-form-item label="维修人员" prop="repairer_id">
+          <el-select
+            v-model="assignForm.repairer_id"
+            placeholder="搜索并选择维修人员"
+            filterable
+            :loading="repairerLoading"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="user in repairerOptions"
+              :key="user.id"
+              :label="`${user.real_name || user.username} (${user.username})`"
+              :value="user.id"
+            >
+              <span>{{ user.real_name || user.username }}</span>
+              <span style="float: right; color: #8492a6; font-size: 12px">
+                {{ user.roles?.map((r) => r.role_name).join('、') || '' }}
+              </span>
+            </el-option>
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="assignDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="assignLoading" @click="confirmAssign">
+          确定
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useAuthStore } from '@/stores/auth'
 import OrderForm from './OrderForm.vue'
 import OrderDetail from './OrderDetail.vue'
 import { getRepairOrders, assignRepairOrder, completeRepairOrder, acceptRepairOrder, returnRepairOrder } from '@/api/repair'
+import { getUsers } from '@/api/user'
+
+const authStore = useAuthStore()
+
+const isChief = computed(() => {
+  const roles = authStore.userInfo?.roles || []
+  // login 接口返回 roles 为字符串数组，getMe 返回对象数组，需兼容两种格式
+  return roles.some((r) => (typeof r === 'string' ? r : r.role_code) === 'chief')
+})
 
 const loading = ref(false)
 const orderList = ref([])
@@ -185,6 +239,22 @@ const pagination = reactive({ page: 1, page_size: 20, total: 0 })
 const formVisible = ref(false)
 const detailVisible = ref(false)
 const currentOrder = ref(null)
+
+// 派单弹窗
+const assignDialogVisible = ref(false)
+const assignLoading = ref(false)
+const assignFormRef = ref(null)
+const currentAssignOrder = ref(null)
+const repairerOptions = ref([])
+const repairerLoading = ref(false)
+
+const assignForm = reactive({
+  repairer_id: null,
+})
+
+const assignRules = {
+  repairer_id: [{ required: true, message: '请选择维修人员', trigger: 'change' }],
+}
 
 onMounted(() => {
   loadOrders()
@@ -277,22 +347,44 @@ function handleView(row) {
   detailVisible.value = true
 }
 
-async function handleAssign(row) {
+async function loadRepairerOptions() {
+  repairerLoading.value = true
   try {
-    const { value } = await ElMessageBox.prompt('请输入维修人员 ID', '派单', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      inputPattern: /^[1-9]\d*$/,
-      inputErrorMessage: '请输入有效的维修人员 ID',
+    const res = await getUsers({ page: 1, page_size: 100 })
+    const data = res.data || {}
+    const users = data.items || []
+    // 只展示活跃用户，选项中标注角色便于识别
+    repairerOptions.value = users.filter((u) => u.status === 'active')
+  } catch (err) {
+    ElMessage.error(err.message || '加载人员列表失败')
+  } finally {
+    repairerLoading.value = false
+  }
+}
+
+function handleAssign(row) {
+  currentAssignOrder.value = row
+  assignForm.repairer_id = null
+  assignDialogVisible.value = true
+  loadRepairerOptions()
+}
+
+async function confirmAssign() {
+  const valid = await assignFormRef.value?.validate().catch(() => false)
+  if (!valid) return
+
+  assignLoading.value = true
+  try {
+    await assignRepairOrder(currentAssignOrder.value.id, {
+      repairer_id: assignForm.repairer_id,
     })
-    
-    await assignRepairOrder(row.id, { repairer_id: parseInt(value) })
     ElMessage.success('派单成功')
+    assignDialogVisible.value = false
     loadOrders()
   } catch (err) {
-    if (err !== 'cancel') {
-      ElMessage.error(err.message || '派单失败')
-    }
+    ElMessage.error(err.message || '派单失败')
+  } finally {
+    assignLoading.value = false
   }
 }
 

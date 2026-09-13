@@ -48,6 +48,13 @@
       <template #header>
         <div class="card-header">
           <span>巡检任务（共 {{ pagination.total }} 个）</span>
+          <PermissionButton
+            permission="inspection:create"
+            type="primary"
+            @click="handleGoToPlan"
+          >
+            新增计划
+          </PermissionButton>
         </div>
       </template>
 
@@ -149,12 +156,15 @@
 
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import PermissionButton from '@/components/PermissionButton.vue'
 import ExecutionDialog from './ExecutionDialog.vue'
 import RecordViewer from './RecordViewer.vue'
 import StatsDialog from './StatsDialog.vue'
 import { getInspectionTasks } from '@/api/inspection'
+
+const router = useRouter()
 
 const loading = ref(false)
 const taskList = ref([])
@@ -203,6 +213,12 @@ async function loadTasks() {
 
 // ==================== 筛选与分页 ====================
 
+function handleGoToPlan() {
+  router.push('/inspection/plan').catch((err) => {
+    console.error('[Task] 路由跳转失败:', err)
+  })
+}
+
 function handleSearch() {
   pagination.page = 1
   loadTasks()
@@ -250,12 +266,12 @@ function taskStatusLabel(status) {
 
 function taskStatusType(status) {
   const map = {
-    pending: '',
+    pending: undefined,
     doing: 'warning',
     completed: 'success',
     missed: 'danger',
   }
-  return map[status] || ''
+  return map[status]
 }
 
 function formatDate(dateStr) {

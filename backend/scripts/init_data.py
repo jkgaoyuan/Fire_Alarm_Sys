@@ -189,6 +189,7 @@ ROLE_PERM_MAP = {
         "statistics:device_status", "statistics:alarm_trend", "statistics:fault_top10", "statistics:inspection",
         # 按钮
         "device:view", "device:repair",
+        "inspection:view",     # 需要查看任务列表才能执行
         "inspection:execute",  # 仅可执行巡检，不可管理计划
         "inspection:stat",     # 可查看统计
         "repair:view", "repair:create", "repair:repair",
