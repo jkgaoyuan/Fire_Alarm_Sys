@@ -122,6 +122,82 @@
   2. 监控发现重复任务生成且数据库约束不足兜底时，评估集成 `aioredis` 分布式锁
   3. 设备规模扩张至 >50,000 或并发任务数 >100 时重新评估
 
+## DEC-014：维修工单流转的权限口径与检查顺序沿用 `/complete`，不叠加数据范围
+
+- **决策**: `PUT /repair-orders/{id}/start` 采用「路由依赖 `require_permission("repair:repair")` + 端点内归属检查（`repairer_id == current_user.id`）」两道闸，**不叠加** `repair_scope_condition`；检查顺序为**先归属（403）后状态（400）**，与既有 `/complete` 完全一致。
+- **原因**:
+  1. `repair:repair` 是「维修填报」类操作，与 `/complete` 同属一类；口径不一致会导致同一动作在不同端点行为分裂
+  2. 「这一单归不归你」比数据范围更精确——数据范围用于**读**（列表/详情），归属用于**写**
+  3. 顺序不一致会造成「同一张工单在 start 与 complete 上得到不同的拒绝码」，前端无法统一处理
+- **影响范围**: `backend/app/api/v1/repair.py`（`start_repair_order`）、`backend/app/crud/repair.py`（`start`）
+- **来源会话**: 2026-09-13 21:00
+- **已知后果**: `pending` 且未指派的工单对**所有人**返回 403（归属检查先拦），而非 400。这是刻意保留的：未指派即无归属，不存在「负责人可越权跳步」的路径。状态机的第二道闸（400）用于拦截「已指派却仍是 pending」的异常数据，已单独用例钉住（TC-RP-019）。
+- **回滚条件**: 若产品要求维修人只能操作本部门工单（而非仅本人负责的），在端点叠加 `repair_scope_condition` 即可。
+
+## DEC-015：前端操作列一律用 `v-permission` 判权限码，废弃 `role_code` 判断
+
+- **决策**: 维修工单列表操作列的按钮可见性，全部由权限码驱动——派单 `repair:assign`、验收通过/退回 `repair:accept`、开始/完成/重新维修 `repair:repair`。`isChief`（`role_code === 'chief'`）判断整体删除。
+- **原因**: 后端已于 `a66da2f7` 把 `role_code == "chief"` 换成 `repair:assign` / `repair:accept` 权限码，**前端未跟进**，形成两套口径。后果双向：主管被撤销 `repair:assign` 后前端仍显示按钮（点击才 403）；非 chief 角色被授予 `repair:assign` 后按钮反被前端藏起来——授予/撤销角色权限在前端毫无效果，与 `repair:*` 接线前的「空操作码」是同一类缺陷。
+- **影响范围**: `frontend/src/views/repair/OrderList.vue`
+- **来源会话**: 2026-09-13 21:00
+- **未完成部分**: 其他页面是否仍有 `role_code` 判断未做排查（见该会话文件的「阻塞点与风险」）。
+- **回滚条件**: 不需要回滚；若某按钮确实应按角色而非权限码控制，应改为新增对应权限码并授予角色，而不是在前端判角色码。
+
+## DEC-016：候选人过滤走 `GET /users` 新增可选 `permission` 参数，不新建 repair 域端点
+
+- **决策**: 为「派单候选人下拉框只列能真正接手的人」，在既有 `GET /users` 上新增可选 `permission` 查询参数（按角色折算的权限码过滤，与 `/users/me/permissions` 同口径）；条件同时作用于 `items` 与 `count`。
+- **原因**:
+  1. 「谁持有某权限码」是可复用能力，后续其他模块的候选人下拉框还会用到，不值得为每个域各建一个端点
+  2. 省略该参数时行为完全不变，对既有调用方（用户管理页等）向后兼容
+  3. 复用既有分页/搜索实现，避免在 repair 域重复一份用户列表查询
+- **影响范围**: `backend/app/api/v1/users.py`、`backend/app/services/user_service.py`
+- **来源会话**: 2026-09-13 21:00
+- **已知残留耦合**: `GET /users` 需要 `system:user` 权限，因此派单能力间接依赖它。当前不构成缺口——只有 chief 持有 `repair:assign`，而 chief 在 `init_data.py` 中绑定全部权限码（含 `system:user`）。若将来把 `repair:assign` 授予一个没有 `system:user` 的角色，会出现「看得到派单按钮、点开候选人列表为空/403」。
+- **回滚/演进条件**: 若上述耦合成为现实，改为在 repair 域新增由 `repair:assign` 守卫的候选人端点（如 `GET /repair-orders/repairers`），并把该参数从 `GET /users` 撤下。
+
+## DEC-017：响应信封必须在端点内保持字面量，不得抽成辅助函数
+
+- **决策**: 统一信封 `Response(code=..., message=..., data=...)` 必须字面量写在每个路由函数体内。可以抽 `data` 部分的构造（如本次的 `_order_out(order)`），但**不能**抽成 `return _envelope(db_obj)` 这样的整体辅助函数。
+- **原因**: `backend/tests/test_api_envelope_contract.py` 是 **AST 静态扫描**，`_classify` 只认两类形态：字面量 `Response(code=...)` 调用，或含 `code` 键的手写 dict。调用辅助函数会被判为 `bare`（裸返回）而失败。该守卫刻意**不做**「已知返回信封的辅助函数」白名单——那等于给它开一个可以返回任何东西的后门，守卫就失去意义了。
+- **影响范围**: `backend/app/api/v1/repair.py`（2026-09-13 重构时实测踩中：抽出 `_order_envelope()` 后 7 个端点全部被判 `bare`，守卫立刻变红）
+- **来源会话**: 2026-09-13 21:00
+- **回滚条件**: 不适用。若将来确实需要整体抽取，正确做法是增强守卫（例如让它能追踪辅助函数的返回语句），而不是加白名单。
+
+## DEC-018：响应信封不一致时**一律改后端**，不改前端去适配
+
+- **决策**: 遇到「后端裸返回、前端按信封读」的不一致，改正**后端**返回统一信封；前端随之写回 `if (res.code === 200 && res.data)`。
+- **原因**:
+  1. 偏离的源头在后端（违反了 `docs/plan/API_RESPONSE_FORMAT_SPECIFICATION.md`），改前端等于把偏离固化进调用方
+  2. **改前端不会报错，只会静默显示错数据**：`frontend/src/utils/request.js` 的响应拦截器对两种形状都放行（`if (data && typeof data.code === 'number') return data` 之后还有 `return data`），组件读 `res.data.items` 得到 `undefined`，再被 `|| {}` 兜底 → **页面显示 0 而不是报错**。维修统计页四项指标恒为 0 就是这么漏了几个月
+  3. 历史教训：3.4/3.6/3.7 三个模块当初都选择了改前端，于是偏离扩散成 20 个端点（`repair.py` 11 + `linkage_plans.py` 7 + `linkage_logs.py` 2）
+- **影响范围**: `backend/app/api/v1/{repair,linkage_plans,linkage_logs}.py`（2026-09-13 已全部迁完，119 个端点口径归零）、`frontend/src/views/{repair,linkage}/`
+- **配套**: 新增 `backend/tests/test_api_envelope_contract.py` 静态守卫（AST 扫全部路由，返回裸数据即失败）。这条约定此前**只靠人记**
+- **来源会话**: 2026-09-13 21:15
+- **回滚条件**: 无。若某端点确需返回非 JSON 载荷（文件下载、流式），用 `FileResponse`/`StreamingResponse`/`PlainTextResponse` 等，守卫天然豁免；204 亦然
+
+## DEC-019：新增业务时区配置，**只作用于调度器**，不改容器 TZ
+
+- **决策**: 新增 `APP_TIMEZONE`（默认 `Asia/Shanghai`）与 `app/core/timezone.py` 的 `now_in_app_tz()` / `today_in_app_tz()`；巡检调度器按业务时区算「现在几点 / 今天几号」，并把算好的 `target_date` **显式传给 service**。
+- **原因**:
+  1. 后端容器跑在 UTC（实测容器 `date` = `Sun Sep 13 12:12 UTC`，而业务口径已是 `20:12+08:00`）。按容器本地时间算 00:05，实际触发在北京 08:05
+  2. 更隐蔽的是**日期**：`generate_tasks_for_plan` 内部的 `date.today()` 返回 UTC 的「昨天」，会生成错日期的任务
+  3. **不改容器 TZ**：仓库内所有时间戳都是 naive 存储，整体改 TZ 会让存量数据语义偏移 8 小时
+- **关键设计**: 时区只出现在调度器这一层。service 层不自己问「今天几号」，避免同一个问题在多处重复回答
+- **影响范围**: `backend/app/core/timezone.py`（新建）、`backend/app/core/config.py`、`backend/app/services/inspection_scheduler.py`
+- **来源会话**: 2026-09-13 21:15
+- **回滚条件**: 无。后续 `app/core/security.py:97` 硬编码的 `timedelta(hours=8)` 可收敛到本模块，属独立工作，本次未做
+
+## DEC-020：`InspectionTask` 补 `(plan_id, task_date)` 唯一约束
+
+- **决策**: 给 `InspectionTask` 加 `UniqueConstraint("plan_id", "task_date", name="uq_inspection_tasks_plan_date")` + alembic 迁移；同时让 `generate_tasks_for_plan` 捕获 `IntegrityError` 并**仅识别唯一违例**（FK 违例仍上抛）。
+- **原因**:
+  1. 模型注释与 3.6 计划第 358 行都以「unique (plan_id, task_date)」作为多 worker 去重的兜底前提，但**该约束实际并不存在**（模型无 `__table_args__`，迁移里只有外键）
+  2. 去重完全依赖 `generate_tasks_for_plan()` 的 check-then-act，`WORKERS>1` 下必然双写；而 `WORKERS` 在 docker-compose 里可配
+- **为何仍要 service 侧捕获**: `main.py:_ensure_database_schema()` 在「存量脏库」分支会 `stamp head` 跳过迁移，且 `create_all` 不会给已有表补约束——**那条路径下约束不生效**，不能依赖它存在
+- **影响范围**: `backend/app/models/inspection.py`、`backend/alembic/versions/2026_09_13_1800-add_inspection_task_unique.py`（新建）、`backend/app/services/inspection_service.py`
+- **来源会话**: 2026-09-13 21:15
+- **回滚条件**: 若需允许同计划同日多任务（如一天多轮巡检），删除该约束与 `_is_duplicate_task_error` 判断
+
 ---
 
 ## 未编号的计划调整（非 ADR，仅备查）
