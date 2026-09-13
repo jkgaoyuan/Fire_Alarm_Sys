@@ -5,7 +5,7 @@
 
 import re
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -169,11 +169,13 @@ async def get_roles_with_pagination(
     *,
     page: int = 1,
     page_size: int = 10,
+    keyword: str | None = None,
     role_code: str | None = None,
     role_name: str | None = None,
 ) -> tuple[list[Role], int]:
     """
-    分页查询角色列表，支持按 role_code / role_name 过滤
+    分页查询角色列表，支持关键字 / role_code / role_name 过滤
+    keyword 同时匹配角色编码与角色名称（前端列表页只有一个搜索框）
     返回 (角色列表, 总数)
     """
     # 构建基础查询（eager load permissions）
@@ -182,6 +184,13 @@ async def get_roles_with_pagination(
 
     # 过滤条件
     filters = []
+    if keyword:
+        filters.append(
+            or_(
+                Role.role_code.contains(keyword),
+                Role.role_name.contains(keyword),
+            )
+        )
     if role_code:
         filters.append(Role.role_code == role_code)
     if role_name:

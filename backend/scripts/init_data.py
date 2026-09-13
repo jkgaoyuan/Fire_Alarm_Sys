@@ -175,6 +175,8 @@ ROLE_PERM_MAP = {
         "statistics:partial",
         # 3.9：查看统计
         "statistics:view",
+        # 3.9：导出报表（这 4 个统计页已开放给值班员，缺此权限按钮必 403）
+        "statistics:export",
         # 联动预案（值班员只能查看和执行）
         "linkage:view", "linkage:execute",
         # 应急处置（值班员可参与时间轴记录）
@@ -196,6 +198,8 @@ ROLE_PERM_MAP = {
         "statistics:partial",
         # 3.9：查看统计
         "statistics:view",
+        # 3.9：导出报表（与值班员同理，页面可进但按钮原本必 403）
+        "statistics:export",
         # 消防演练（维保人员可查看与执行演练，OQ-5 方案一）
         "drill:event", "drill:view", "drill:execute",
     ],

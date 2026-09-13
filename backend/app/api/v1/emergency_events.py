@@ -8,8 +8,10 @@
 - POST /emergency-events/{id}/timeline - 添加节点
 """
 
+from datetime import datetime
 from typing import Annotated, Optional
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
@@ -64,6 +66,14 @@ async def check_data_scope(event_id: int, user: User, db: AsyncSession):
         return event
 
 
+def _parse_bound(value: str, *, end_of_day: bool = False) -> datetime:
+    """解析 start/end 边界；纯日期（YYYY-MM-DD）时 end 取当日 23:59:59"""
+    parsed = datetime.fromisoformat(value)
+    if end_of_day and len(value) == 10:
+        parsed = parsed.replace(hour=23, minute=59, second=59, microsecond=999999)
+    return parsed
+
+
 @router.get("", response_model=dict)
 async def list_emergency_events(
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -71,29 +81,45 @@ async def list_emergency_events(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     status: Optional[str] = Query(None, description="processing/resolved/closed"),
+    event_no: Optional[str] = Query(None, description="事件编号（模糊匹配）"),
+    org_id: Optional[int] = Query(None, description="按报警所属区域筛选"),
     start: Optional[str] = Query(None, description="开始时间 ISO8601"),
     end: Optional[str] = Query(None, description="结束时间 ISO8601"),
 ):
     """获取应急事件列表（分页 + 筛选）"""
+    from app.models.alarm import Alarm
     from app.models.emergency import EmergencyEvent
-    
+
     base_stmt = select(EmergencyEvent)
-    
+
     if status:
         base_stmt = base_stmt.where(EmergencyEvent.status == status)
-    
+    if event_no:
+        base_stmt = base_stmt.where(EmergencyEvent.event_no.contains(event_no))
+    if org_id is not None:
+        # 应急事件表本身没有区域字段，区域挂在关联报警上；按需 join 以免影响默认查询
+        base_stmt = base_stmt.join(
+            Alarm, EmergencyEvent.alarm_id == Alarm.id
+        ).where(Alarm.org_id == org_id)
+    if start:
+        base_stmt = base_stmt.where(EmergencyEvent.started_at >= _parse_bound(start))
+    if end:
+        base_stmt = base_stmt.where(
+            EmergencyEvent.started_at <= _parse_bound(end, end_of_day=True)
+        )
+
     count_stmt = select(func.count()).select_from(base_stmt.subquery())
     total = (await db.execute(count_stmt)).scalar_one_or_none() or 0
-    
+
     stmt = base_stmt.order_by(EmergencyEvent.created_at.desc())\
         .offset((page - 1) * page_size)\
         .limit(page_size)
-    
+
     result = await db.execute(stmt)
     events = result.scalars().all()
-    
+
     total_pages = (total + page_size - 1) // page_size if page_size > 0 else 0
-    
+
     return {
         "code": 200,
         "data": {
@@ -201,24 +227,18 @@ async def get_event_report(
 ):
     """导出事件报告（HTML/PDF，P0）"""
     http_status, content = await generate_event_report(db, event_id)
-    
+
     if http_status == 200:
-        # 返回 HTML（前端可打印为 PDF）
-        return {
-            "code": 200,
-            "message": "报告生成成功",
-            "content_type": "text/html; charset=utf-8",
-            "data": content
-        }
-    elif http_status == 202:
-        # 超大报告，提示异步导出
-        return {
-            "code": 202,
-            "message": content,
-            "status": "pending"
-        }
-    else:
-        return {"code": http_status, "message": content}
+        # 直接返回 HTML 流：前端以 responseType:'blob' 接收后落盘为 .html。
+        # 早期返回 JSON 信封，导致下载到的文件内容是被转义的 JSON 而非可打开的 HTML。
+        return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
+
+    # 404 事件不存在 / 202 超大报告需异步导出：本端点不做异步导出，
+    # 统一转成 HTTP 错误，让前端 catch 到可读提示而不是落一个坏文件
+    raise HTTPException(
+        status_code=http_status if 400 <= http_status < 500 else 400,
+        detail=content,
+    )
 
 
 @router.get("/{event_id}/timelines", response_model=dict)

@@ -55,11 +55,13 @@ export function deleteLinkagePlan(id) {
 
 /**
  * 切换预案启用状态
+ * 必须把目标状态放进 body：后端按显式值设置，省略才退化为取反
  */
 export function togglePlanStatus(id, isEnabled) {
   return request({
     url: `/linkage-plans/${id}/toggle`,
     method: 'post',
+    data: { is_enabled: isEnabled },
   })
 }
 

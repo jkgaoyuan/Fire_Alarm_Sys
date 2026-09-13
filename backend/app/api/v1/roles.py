@@ -27,6 +27,7 @@ router = APIRouter()
 async def get_roles(
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
+    keyword: str | None = Query(None, description="按角色编码或名称模糊搜索"),
     role_code: str | None = Query(None),
     role_name: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
@@ -37,6 +38,7 @@ async def get_roles(
         db,
         page=page,
         page_size=page_size,
+        keyword=keyword,
         role_code=role_code,
         role_name=role_name,
     )

@@ -106,7 +106,8 @@ class AlarmLinkageLogOut(BaseModel):
     """日志响应"""
     
     id: int
-    alarm_id: int
+    # 模拟触发的日志没有真实告警，故可空
+    alarm_id: Optional[int] = None
     plan_id: Optional[int] = None
     action_type: str
     target_device_id: Optional[int] = None

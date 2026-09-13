@@ -112,7 +112,9 @@ const nodeForm = reactive({ node_type: null, remark: '' })
 async function loadTimelines() {
   try {
     const res = await getEventTimelines(props.eventId)
-    timelines.value = res.data || []
+    // 后端返回 {code, data: {items, total}}；直接取 data 会得到对象，
+    // timelines.length 恒为 undefined 导致时间轴永不渲染
+    timelines.value = res.data?.items || []
   } catch (err) {
     console.error('加载时间轴失败:', err)
   }

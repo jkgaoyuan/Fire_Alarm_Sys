@@ -69,25 +69,6 @@ async def get_alarm_linkage_logs(
 
 
 @router.get(
-    "/{log_id}",
-    summary="获取日志详情",
-    dependencies=[Depends(require_permission("linkage:view"))]
-)
-async def get_alarm_linkage_log_detail(
-    log_id: int,
-    db: AsyncSession = Depends(get_db)
-):
-    """获取单个日志详情"""
-    log = await alarm_linkage_log_crud.get(db, log_id)
-    if not log:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="日志不存在"
-        )
-    return AlarmLinkageLogOut.model_validate(log)
-
-
-@router.get(
     "/export",
     summary="导出联动日志",
     dependencies=[Depends(require_permission("linkage:view"))]
@@ -104,9 +85,9 @@ async def export_alarm_linkage_logs(
     限制最多 1 万行
     """
     from fastapi.responses import PlainTextResponse
-    
+
     stmt = select(AlarmLinkageLog)
-    
+
     if alarm_id is not None:
         stmt = stmt.where(AlarmLinkageLog.alarm_id == alarm_id)
     if plan_id is not None:
@@ -115,15 +96,15 @@ async def export_alarm_linkage_logs(
         stmt = stmt.where(AlarmLinkageLog.created_at >= start_time)
     if end_time is not None:
         stmt = stmt.where(AlarmLinkageLog.created_at <= end_time)
-    
+
     results = (await db.execute(stmt)).scalars().all()
-    
+
     if len(results) > 10000:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="导出行数超过 1 万，请缩小筛选范围"
         )
-    
+
     # 生成 CSV
     lines = ["id,alarm_id,plan_id,action_type,target_device_id,status,result_message,is_simulation,created_at"]
     for log in results:
@@ -132,8 +113,30 @@ async def export_alarm_linkage_logs(
             f"{log.action_type},{log.target_device_id},{log.status},"
             f'"{log.result_message or ""}",{log.is_simulation},{log.created_at}'
         )
-    
+
     csv_content = "\n".join(lines)
     return PlainTextResponse(csv_content, media_type="text/csv", headers={
         "Content-Disposition": 'attachment; filename="linkage_logs.csv"'
     })
+
+
+# 注意：`/{log_id}` 必须注册在 `/export` 之后。
+# Starlette 按注册顺序匹配且 `{log_id}` 段无正则约束，
+# 若排在前面会把 "export" 当成 log_id 捕获 → 422 int_parsing。
+@router.get(
+    "/{log_id}",
+    summary="获取日志详情",
+    dependencies=[Depends(require_permission("linkage:view"))]
+)
+async def get_alarm_linkage_log_detail(
+    log_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """获取单个日志详情"""
+    log = await alarm_linkage_log_crud.get(db, log_id)
+    if not log:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="日志不存在"
+        )
+    return AlarmLinkageLogOut.model_validate(log)

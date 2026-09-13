@@ -44,6 +44,10 @@ class AlarmOut(BaseModel):
     silenced_by: int | None = None
     silenced_at: datetime | None = None
     reset_at: datetime | None = None
+    # 复位时操作员填写的备注。模型已存该列，但序列化缺失会让
+    # 报警详情的「复位备注」永远显示 '-'
+    reset_by: int | None = None
+    reset_remark: str | None = None
     pending_since: datetime | None = None
     resolved_at: datetime | None = None
     created_at: datetime

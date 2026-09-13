@@ -9,7 +9,7 @@
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -174,8 +174,7 @@ async def delete_linkage_plan(
             detail="预案不存在"
         )
     
-    await linkage_plan_crud.remove(db, plan)
-    await db.commit()
+    await linkage_plan_crud.delete(db, id=plan.id)
 
 
 @router.post(
@@ -186,17 +185,20 @@ async def delete_linkage_plan(
 )
 async def toggle_linkage_plan_status(
     plan_id: int,
+    data: dict | None = Body(default=None),
     db: AsyncSession = Depends(get_db)
 ):
-    """切换预案的启用/停用状态"""
+    """切换预案的启用/停用状态（body 可省略，省略即取反）"""
     plan = await linkage_plan_crud.get(db, plan_id)
     if not plan:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="预案不存在"
         )
-    
-    plan.is_enabled = not plan.is_enabled
+
+    # 显式传入 is_enabled 时按目标值设置，避免「双击即两次取反」导致 UI 与库不同步
+    data = data or {}
+    plan.is_enabled = data.get("is_enabled", not plan.is_enabled)
     await db.commit()
     await db.refresh(plan)
     
@@ -307,123 +309,3 @@ async def execute_linkage_plan(
         "message": f"成功执行 {len(logs)} 个动作",
         "logs": [AlarmLinkageLogOut.model_validate(log) for log in logs],
     }
-
-
-# ==================== 联动日志管理 ====================
-
-@router.get(
-    "/logs",
-    response_model=AlarmLinkageLogPagination,
-    summary="查询联动日志",
-    dependencies=[Depends(require_permission("linkage:view"))]
-)
-async def get_linkage_logs(
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
-    alarm_id: Optional[int] = None,
-    plan_id: Optional[int] = None,
-    status: Optional[str] = None,
-    start_time: Optional[datetime] = None,
-    end_time: Optional[datetime] = None,
-    db: AsyncSession = Depends(get_db),
-):
-    """分页查询联动日志，支持多条件筛选"""
-    skip = (page - 1) * page_size
-    
-    stmt = select(AlarmLinkageLog)
-    if alarm_id is not None:
-        stmt = stmt.where(AlarmLinkageLog.alarm_id == alarm_id)
-    if plan_id is not None:
-        stmt = stmt.where(AlarmLinkageLog.plan_id == plan_id)
-    if status is not None:
-        stmt = stmt.where(AlarmLinkageLog.status == status)
-    if start_time is not None:
-        stmt = stmt.where(AlarmLinkageLog.created_at >= start_time)
-    if end_time is not None:
-        stmt = stmt.where(AlarmLinkageLog.created_at <= end_time)
-    
-    # 总数 (SQLAlchemy 2.0 正确语法)
-    count_stmt = select(func.count()).select_from(stmt.subquery())
-    total = (await db.execute(count_stmt)).scalar_one_or_none()
-    
-    # 数据
-    stmt = stmt.order_by(AlarmLinkageLog.created_at.desc()).offset(skip).limit(page_size)
-    results = (await db.execute(stmt)).scalars().all()
-    
-    items = [AlarmLinkageLogOut.model_validate(log) for log in results]
-    
-    return AlarmLinkageLogPagination(
-        items=items,
-        total=total or 0,
-        page=page,
-        page_size=page_size,
-    )
-
-
-@router.get(
-    "/logs/{log_id}",
-    response_model=AlarmLinkageLogOut,
-    summary="获取日志详情",
-    dependencies=[Depends(require_permission("linkage:view"))]
-)
-async def get_linkage_log_detail(log_id: int, db: AsyncSession = Depends(get_db)):
-    """获取单个日志详情"""
-    log = await alarm_linkage_log_crud.get(db, log_id)
-    if not log:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="日志不存在"
-        )
-    return AlarmLinkageLogOut.model_validate(log)
-
-
-@router.get(
-    "/logs/export",
-    summary="导出联动日志（CSV）",
-    dependencies=[Depends(require_permission("linkage:view"))]
-)
-async def export_linkage_logs(
-    alarm_id: Optional[int] = None,
-    plan_id: Optional[int] = None,
-    start_time: Optional[datetime] = None,
-    end_time: Optional[datetime] = None,
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    导出联动日志为 CSV 格式
-    限制最多 1 万行，超限需分批查询
-    """
-    from fastapi.responses import PlainTextResponse
-    
-    # 构建查询
-    stmt = select(AlarmLinkageLog)
-    if alarm_id is not None:
-        stmt = stmt.where(AlarmLinkageLog.alarm_id == alarm_id)
-    if plan_id is not None:
-        stmt = stmt.where(AlarmLinkageLog.plan_id == plan_id)
-    if start_time is not None:
-        stmt = stmt.where(AlarmLinkageLog.created_at >= start_time)
-    if end_time is not None:
-        stmt = stmt.where(AlarmLinkageLog.created_at <= end_time)
-    
-    results = (await db.execute(stmt)).scalars().all()
-    
-    if len(results) > 10000:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="导出行数超过 1 万，请缩小筛选范围"
-        )
-    
-    # 生成 CSV
-    lines = ["id,alarm_id,plan_id,action_type,target_device_id,status,result_message,is_simulation,created_at"]
-    for log in results:
-        lines.append(
-            f"{log.id},{log.alarm_id},{log.plan_id},"
-            f"{log.action_type},{log.target_device_id},{log.status},"
-            f'"{log.result_message or ""}",{log.is_simulation},{log.created_at}'
-        )
-    
-    csv_content = "\n".join(lines)
-    return PlainTextResponse(csv_content, media_type="text/csv", headers={
-        "Content-Disposition": 'attachment; filename="linkage_logs.csv"'
-    })

@@ -24,6 +24,9 @@ class ExportTaskOut(BaseModel):
     status: str
     file_name: Optional[str] = None
     total_rows: Optional[int] = None
+    # 必须回显：导出中心的「重试」会把该字段原样回传，
+    # 缺了它重试会静默产出空文件（0 行且无报错）
+    params: Optional[dict] = Field(default=None, description="导出参数")
     error_message: Optional[str] = None
     created_at: datetime
     completed_at: Optional[datetime] = None

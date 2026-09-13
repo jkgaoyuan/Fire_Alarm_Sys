@@ -45,7 +45,8 @@ class AlarmLinkageLog(Base):
     __tablename__ = "alarm_linkage_logs"
 
     # 基础字段
-    alarm_id: Mapped[int] = mapped_column(ForeignKey("alarms.id"), index=True)
+    # 模拟触发（is_simulation=True）不产生真实告警，故 alarm_id 必须可空
+    alarm_id: Mapped[int | None] = mapped_column(ForeignKey("alarms.id"), index=True)
     plan_id: Mapped[int | None] = mapped_column(ForeignKey("linkage_plans.id"), index=True)
     action_type: Mapped[str] = mapped_column(String(50))
     target_device_id: Mapped[int | None] = mapped_column(ForeignKey("devices.id"), index=True)
@@ -58,6 +59,6 @@ class AlarmLinkageLog(Base):
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), default=func.now())
 
     # 关系
-    alarm: Mapped[Alarm] = relationship("Alarm", foreign_keys=[alarm_id])
+    alarm: Mapped[Alarm | None] = relationship("Alarm", foreign_keys=[alarm_id])
     plan: Mapped[LinkagePlan] = relationship("LinkagePlan", foreign_keys=[plan_id])
     target_device: Mapped[Device] = relationship("Device", foreign_keys=[target_device_id])

@@ -44,10 +44,11 @@ export function addTimelineNode(eventId, data) {
 
 /**
  * 删除时间轴节点（B5）
+ * 后端路由：DELETE /emergency/events/timelines/{node_id}
  */
 export function deleteTimelineNode(nodeId) {
   return request({
-    url: `/emergency/timeline-nodes/${nodeId}`,
+    url: `/emergency/events/timelines/${nodeId}`,
     method: 'delete',
   })
 }
@@ -90,10 +91,11 @@ export function markNotificationRead(notificationId) {
 
 /**
  * 标记所有通知为已读（B7）
+ * 后端路由：POST /notifications/read-all
  */
 export function markNotificationsAsRead() {
   return request({
-    url: '/notifications/mark-all-read',
+    url: '/notifications/read-all',
     method: 'post',
   })
 }
