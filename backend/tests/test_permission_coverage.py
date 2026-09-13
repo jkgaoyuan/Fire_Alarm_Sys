@@ -38,11 +38,11 @@ API_DIR = BACKEND_DIR / "app" / "api" / "v1"
 #   ③ 孤儿码（3）—— 有更细的码在用了，这三个没人引用，多半是早期设计的残留。
 UNENFORCED_ALLOWLIST = {
     # ① 被手写检查取代
-    "repair:view",
-    "repair:create",
-    "repair:assign",
-    "repair:repair",
-    "repair:accept",
+    # ① 被手写检查取代 —— repair:* 5 个已于 2026-09-13 接线完成，本类清空：
+    #    assign/accept/return 的 `role_code == "chief"` 判断换成了
+    #    repair:assign / repair:accept 权限码；complete 在保留归属检查的同时
+    #    加了 repair:repair；list/get/4 个统计加上了 repair:view / repair:create。
+    #    主管不受影响——init_data 里 bind_permissions(chief_role, 全部权限码)。
     # ② 被更粗的 menu 码取代
     "system:user:create",
     "system:user:update",

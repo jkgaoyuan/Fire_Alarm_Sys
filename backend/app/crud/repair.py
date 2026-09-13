@@ -42,8 +42,19 @@ class RepairOrderCRUD:
         
         return db_obj
     
-    async def get(self, id: int) -> Optional[RepairOrder]:
-        """获取单个维修工单（含关联信息）"""
+    async def get(self, id: int, scope_condition=None) -> Optional[RepairOrder]:
+        """
+        获取单个维修工单（含关联信息）。
+
+        `scope_condition` 是数据权限范围表达式（见 services/repair_service.py）。
+        传入后越权的工单按「不存在」返回 None，调用方据此回 404，不泄露存在性。
+
+        ⚠️ 这里的四个 `selectinload` 不能省：响应构造会访问 `order.device`、
+        `order.reporter` 等关系，异步会话下**懒加载会抛 MissingGreenlet**。
+        调用方若绕开本方法自己拼 `select(RepairOrder)` 而不带这些 options，
+        线上就是 500（2026-09-13 详情接口实际踩过；单测没抓到是因为测试夹具
+        与请求共用会话，关系对象已在 identity map 里，压根没触发懒加载）。
+        """
         query = (
             select(RepairOrder)
             .options(
@@ -54,6 +65,8 @@ class RepairOrderCRUD:
             )
             .where(RepairOrder.id == id)
         )
+        if scope_condition is not None:
+            query = query.where(scope_condition)
         result = await self.db.execute(query)
         return result.scalar_one_or_none()
     
@@ -66,10 +79,19 @@ class RepairOrderCRUD:
         repairer_id: Optional[int] = None,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
+        scope_condition=None,
     ) -> Tuple[List[RepairOrder], int]:
-        """获取维修工单列表（分页 + 筛选）"""
+        """
+        获取维修工单列表（分页 + 筛选）。
+
+        `scope_condition` 是数据权限范围表达式（见 services/repair_service.py），
+        由调用方传入。它同时作用于 count 与 items——否则会出现
+        「总数 2、只回 1 条」这种分页错位。
+        """
         # 构建查询条件
         conditions = []
+        if scope_condition is not None:
+            conditions.append(scope_condition)
         if status:
             conditions.append(RepairOrder.status == status)
         if device_id:

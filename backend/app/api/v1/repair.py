@@ -8,10 +8,11 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_current_user, get_db
+from app.core.dependencies import get_current_user, get_db, require_permission
 from app.schemas.auth import ResponseModel as Response
 from app.crud.repair import RepairOrderCRUD
 from app.models.user import User
+from app.services.repair_service import repair_scope_condition
 from app.schemas.repair import (
     RepairOrderCreate,
     RepairOrderUpdate,
@@ -32,7 +33,12 @@ router = APIRouter()
 
 # ==================== CRUD 接口 ====================
 
-@router.get("/repair-orders", response_model=Response[RepairOrderListResponse], summary="获取维修工单列表")
+@router.get(
+    "/repair-orders",
+    response_model=Response[RepairOrderListResponse],
+    summary="获取维修工单列表",
+    dependencies=[Depends(require_permission("repair:view"))],
+)
 async def list_repair_orders(
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
@@ -44,9 +50,9 @@ async def list_repair_orders(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """获取维修工单列表（分页 + 筛选）"""
+    """获取维修工单列表（分页 + 筛选，受数据权限范围约束）"""
     crud = RepairOrderCRUD(db)
-    
+
     skip = (page - 1) * page_size
     items, total = await crud.get_multi(
         skip=skip,
@@ -56,6 +62,7 @@ async def list_repair_orders(
         repairer_id=repairer_id,
         start_date=start_date,
         end_date=end_date,
+        scope_condition=await repair_scope_condition(current_user, db),
     )
     
     # 转换为响应格式
@@ -101,7 +108,13 @@ async def list_repair_orders(
     )
 
 
-@router.post("/repair-orders", response_model=Response[RepairOrderResponse], status_code=status.HTTP_201_CREATED, summary="创建维修工单")
+@router.post(
+    "/repair-orders",
+    response_model=Response[RepairOrderResponse],
+    status_code=status.HTTP_201_CREATED,
+    summary="创建维修工单",
+    dependencies=[Depends(require_permission("repair:create"))],
+)
 async def create_repair_order(
     obj_in: RepairOrderCreate,
     db: AsyncSession = Depends(get_db),
@@ -143,15 +156,22 @@ async def create_repair_order(
     )
 
 
-@router.get("/repair-orders/{id}", response_model=Response[RepairOrderResponse], summary="获取维修工单详情")
+@router.get(
+    "/repair-orders/{id}",
+    response_model=Response[RepairOrderResponse],
+    summary="获取维修工单详情",
+    dependencies=[Depends(require_permission("repair:view"))],
+)
 async def get_repair_order(
     id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """获取维修工单详情"""
+    """获取维修工单详情（越出数据权限范围按不存在处理，不泄露存在性）"""
     crud = RepairOrderCRUD(db)
-    db_obj = await crud.get(id)
+    db_obj = await crud.get(
+        id, scope_condition=await repair_scope_condition(current_user, db)
+    )
     
     if not db_obj:
         raise HTTPException(
@@ -190,20 +210,19 @@ async def get_repair_order(
 
 # ==================== 状态流转接口 ====================
 
-@router.put("/repair-orders/{id}/assign", response_model=Response[RepairOrderResponse], summary="派单")
+@router.put(
+    "/repair-orders/{id}/assign",
+    response_model=Response[RepairOrderResponse],
+    summary="派单",
+    dependencies=[Depends(require_permission("repair:assign"))],
+)
 async def assign_repair_order(
     id: int,
     obj_in: RepairOrderAssign,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """派单（仅消防主管可操作）"""
-    # 权限检查：仅消防主管可派单
-    if not any(r.role_code == "chief" for r in current_user.roles):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="仅消防主管可执行派单操作"
-        )
+    """派单（需 repair:assign 权限，由路由依赖校验）"""
     
     crud = RepairOrderCRUD(db)
     try:
@@ -252,7 +271,15 @@ async def assign_repair_order(
     )
 
 
-@router.put("/repair-orders/{id}/complete", response_model=Response[RepairOrderResponse], summary="完成维修")
+@router.put(
+    "/repair-orders/{id}/complete",
+    response_model=Response[RepairOrderResponse],
+    summary="完成维修",
+    # repair:repair = 「维修填报」。与下面保留的**归属检查**（只有被指派的
+    # 维修人本人能完成）叠加：权限码管「这类操作能不能做」，归属检查管
+    # 「这一单归不归你」。两者语义不同，都需要。
+    dependencies=[Depends(require_permission("repair:repair"))],
+)
 async def complete_repair_order(
     id: int,
     obj_in: RepairOrderComplete,
@@ -322,19 +349,18 @@ async def complete_repair_order(
     )
 
 
-@router.put("/repair-orders/{id}/accept", response_model=Response[RepairOrderResponse], summary="验收通过")
+@router.put(
+    "/repair-orders/{id}/accept",
+    response_model=Response[RepairOrderResponse],
+    summary="验收通过",
+    dependencies=[Depends(require_permission("repair:accept"))],
+)
 async def accept_repair_order(
     id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """验收通过（仅消防主管可操作）"""
-    # 权限检查：仅消防主管可验收
-    if not any(r.role_code == "chief" for r in current_user.roles):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="仅消防主管可执行验收操作"
-        )
+    """验收通过（需 repair:accept 权限，由路由依赖校验）"""
     
     crud = RepairOrderCRUD(db)
     try:
@@ -383,20 +409,19 @@ async def accept_repair_order(
     )
 
 
-@router.put("/repair-orders/{id}/return", response_model=Response[RepairOrderResponse], summary="验收退回")
+@router.put(
+    "/repair-orders/{id}/return",
+    response_model=Response[RepairOrderResponse],
+    summary="验收退回",
+    dependencies=[Depends(require_permission("repair:accept"))],
+)
 async def return_repair_order(
     id: int,
     obj_in: RepairOrderReturn,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """验收退回（仅消防主管可操作）"""
-    # 权限检查：仅消防主管可验收
-    if not any(r.role_code == "chief" for r in current_user.roles):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="仅消防主管可执行验收操作"
-        )
+    """验收退回（需 repair:accept 权限，由路由依赖校验）"""
     
     crud = RepairOrderCRUD(db)
     try:
@@ -451,6 +476,7 @@ async def return_repair_order(
     "/repair-statistics/overview",
     response_model=Response[RepairOverviewResponse],
     summary="维修概览统计",
+    dependencies=[Depends(require_permission("repair:view"))],
 )
 async def get_repair_overview(
     db: AsyncSession = Depends(get_db),
@@ -472,7 +498,9 @@ async def get_repair_overview(
     )
 
 
-@router.get("/repair-statistics/by-repairer", response_model=Response[WorkloadResponse], summary="维修人员工作量")
+@router.get("/repair-statistics/by-repairer", response_model=Response[WorkloadResponse],
+    dependencies=[Depends(require_permission("repair:view"))],
+)
 async def get_repairer_workload(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -487,7 +515,9 @@ async def get_repairer_workload(
     )
 
 
-@router.get("/repair-statistics/fault-types", response_model=Response[FaultDistributionResponse], summary="故障类型分布")
+@router.get("/repair-statistics/fault-types", response_model=Response[FaultDistributionResponse],
+    dependencies=[Depends(require_permission("repair:view"))],
+)
 async def get_fault_distribution(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -502,7 +532,9 @@ async def get_fault_distribution(
     )
 
 
-@router.get("/repair-statistics/top10-devices", response_model=Response[Top10FaultDevicesResponse], summary="故障设备TOP10")
+@router.get("/repair-statistics/top10-devices", response_model=Response[Top10FaultDevicesResponse],
+    dependencies=[Depends(require_permission("repair:view"))],
+)
 async def get_top10_fault_devices(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),

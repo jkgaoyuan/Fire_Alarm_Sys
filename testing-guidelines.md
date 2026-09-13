@@ -204,6 +204,32 @@ cd backend && E2E_BASE_URL=http://localhost:8000/api/v1 python -m pytest -m e2e 
     实测：补跑 12 秒后日志已生效但一条都看不到，直到在 `scripts/entrypoint.sh` 里
     `export PYTHONUNBUFFERED=1` 才出现。写后台任务时顺手确认这一项。
 
+28. **`selectinload` / 懒加载这类问题，测试里会因为 identity map 而变成假绿**。
+    测试夹具与请求**共用同一个会话**，夹具里建出来的设备/用户对象已经在
+    identity map 中；组件（或响应构造）访问 `order.device` 时**直接从内存拿到**，
+    压根不发 SQL——于是「关系没预加载」这个线上必炸的问题（异步会话下
+    `MissingGreenlet` → HTTP 500）在单测里完全看不出来。
+    实测：给 `get_repair_order` 加数据范围时把 `crud.get()`（带 4 个
+    `selectinload`）换成了裸 `select(RepairOrder)`，**11 条用例全绿**，
+    而容器里 admin 打详情直接 500。
+    写「接口能否正常返回」这类用例时，先 `db_session.expire_all()` 把 identity map
+    清掉，强制关系从库里真加载：
+    ```python
+    mine_id = e["mine"].id          # ⚠️ 先取出来：expire_all() 会把夹具对象也过期
+    db_session.expire_all()         # 同步方法，勿 await
+    resp = await client.get(f"/api/v1/repair-orders/{mine_id}", headers=headers)
+    ```
+    顺序不能反——先 `expire_all()` 再读 `e["mine"].id`，会在**测试自己**身上触发
+    同步刷新并抛 MissingGreenlet，把「接口有没有 500」这个待测问题淹掉。
+    见 `tests/test_repair_authz.py::test_in_scope_detail_survives_fresh_session`。
+
+29. **迁移一个端点时，必须扫一遍「谁在断言它的响应形状」**。
+    统一信封那轮，`linkage_plans.py` 的 toggle 改完是绿的，
+    而 `test_api_contract_regressions.py::test_linkage_toggle_accepts_explicit_state`
+    （早先自己写的）断言的还是裸 `resp.json()["is_enabled"]`，直接被打红。
+    这类耦合不会自己浮现，得主动 grep：`grep -rn "json()\[" tests/ | grep -v '"code"\|"data"'`。
+
+
 ## 七、缺陷与守护用例的绑定规则
 
 - 每修复一个生产缺陷，**同一提交内必须带守护用例**，并在测试报告第四节记全三列：现象 / 修复 / 守护手段。
