@@ -48,3 +48,7 @@ htmlcov/
 # Logs
 *.log
 logs/
+
+# 运行时产物：设备上传件、平面图与统计导出文件
+# （docker-compose 中挂载为 backend_storage 卷，不入版本控制）
+storage/
