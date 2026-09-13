@@ -6,12 +6,8 @@
 """
 from datetime import date
 
-from sqlalchemy import select
-
-from app.core.security import create_access_token, get_password_hash
 from app.models.inspection import InspectionPlan, InspectionTask
-from app.models.permission import Permission
-from app.models.user import Role, User
+from tests.auth_helpers import auth_headers, create_user_with_perms  # noqa: F401
 from tests.device_helpers import create_org  # noqa: F401  （对外再导出，用例只 import 本模块）
 
 INSPECTION_VIEW_PERM = "inspection:view"
@@ -23,42 +19,17 @@ async def create_inspection_user(
     perm_codes: list[str] | None = None,
     data_scope: str = "all",
     org=None,
-) -> User:
+):
     """
-    创建绑定指定巡检权限码的用户。
+    建一个绑定指定巡检权限码的用户。
 
-    角色与权限的关联必须在 flush 之前完成，否则异步会话下 `role.permissions`
-    会触发懒加载并抛 MissingGreenlet（testing-guidelines 第六节第 16 条）。
+    实现已并入 tests/auth_helpers.py（原先这里是与
+    test_api_contract_regressions.make_user_with_perms 几乎逐行相同的副本）。
+    保留本函数作为域内入口，调用方不必改。
     """
-    role = Role(role_code=f"role_{username}", role_name=username, is_builtin=False)
-    for code in perm_codes or []:
-        perm = (
-            await db.execute(select(Permission).where(Permission.perm_code == code))
-        ).scalar_one_or_none()
-        if perm is None:
-            perm = Permission(perm_code=code, perm_name=code, perm_type="button")
-            db.add(perm)
-        role.permissions.append(perm)
-
-    user = User(
-        username=username,
-        password_hash=get_password_hash("Inspect1234"),
-        real_name=username,
-        status="active",
-        data_scope=data_scope,
-        org_id=org.id if org else None,
+    return await create_user_with_perms(
+        db, username, perm_codes, data_scope=data_scope, org=org
     )
-    user.roles.append(role)
-    db.add(user)
-    await db.commit()
-    await db.refresh(user, ["roles"])
-    return user
-
-
-def auth_headers(user: User) -> dict:
-    """该用户的 Authorization 头"""
-    token = create_access_token(data={"sub": str(user.id), "jti": f"jti-{user.id}"})
-    return {"Authorization": f"Bearer {token}"}
 
 
 async def make_plan(

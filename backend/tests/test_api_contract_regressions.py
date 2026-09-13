@@ -11,9 +11,8 @@ from datetime import date
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.core.security import create_access_token, get_password_hash
-from app.models.permission import Permission
 from app.models.user import Role, User
+from tests.auth_helpers import auth_headers, create_user_with_perms
 from app.schemas.alarm import AlarmOut
 from app.schemas.device import DeviceCreate
 from app.schemas.report_export import ExportTaskOut
@@ -25,34 +24,11 @@ async def make_user_with_perms(db_session, username: str, perm_codes: list[str])
     """
     建一个只持有指定权限码的用户。
 
-    注意：角色与权限的关联必须在 flush 之前完成，否则异步会话下
-    `role.permissions` 会触发懒加载并抛 MissingGreenlet。
+    实现已并入 tests/auth_helpers.py（原先这里是一份几乎逐行相同的副本，
+    与 inspection_helpers.create_inspection_user 重复）。保留本函数作为入口，
+    调用方不必改。
     """
-    role = Role(role_code=f"{username}_role", role_name=username, is_builtin=False)
-    for code in perm_codes:
-        role.permissions.append(
-            Permission(perm_code=code, perm_name=code, perm_type="api")
-        )
-    db_session.add(role)
-    await db_session.flush()
-
-    user = User(
-        username=username,
-        password_hash=get_password_hash("Test1234"),
-        real_name=username,
-        status="active",
-        data_scope="all",
-    )
-    user.roles.append(role)
-    db_session.add(user)
-    await db_session.commit()
-    await db_session.refresh(user, ["roles"])
-    return user
-
-
-def auth_headers(user: User) -> dict:
-    token = create_access_token(data={"sub": str(user.id), "jti": f"jti-{user.id}"})
-    return {"Authorization": f"Bearer {token}"}
+    return await create_user_with_perms(db_session, username, perm_codes)
 
 
 # ==================== 响应字段被 schema 丢弃 ====================

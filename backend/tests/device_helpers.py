@@ -6,11 +6,11 @@
 
 from sqlalchemy import select
 
-from app.core.security import create_access_token, get_password_hash
+from app.core.security import create_access_token
 from app.models.device_type import DeviceType
 from app.models.organization import Organization
-from app.models.permission import Permission
-from app.models.user import Role, User
+from app.models.user import User
+from tests.auth_helpers import create_user_with_perms
 
 ALL_DEVICE_PERMS = [
     "device:view",
@@ -68,30 +68,22 @@ async def create_device_user(
     data_scope: str = "all",
     org: Organization | None = None,
 ) -> User:
-    """创建绑定指定设备权限码的用户（一次性建图后提交，避免异步懒加载）"""
-    role = Role(role_code=f"role_{username}", role_name=username, is_builtin=False)
-    for code in perm_codes or []:
-        perm = (
-            await db.execute(select(Permission).where(Permission.perm_code == code))
-        ).scalar_one_or_none()
-        if perm is None:
-            perm = Permission(perm_code=code, perm_name=code, perm_type="button")
-            db.add(perm)
-        role.permissions.append(perm)
+    """
+    创建绑定指定设备权限码的用户（一次性建图后提交，避免异步懒加载）。
 
-    user = User(
-        username=username,
-        password_hash=get_password_hash("Device1234"),
-        real_name=username,
-        status="active",
+    实现已并入 tests/auth_helpers.py——这原本是全仓库第四份几乎相同的
+    `make_xxx_user`。保留本函数作为设备域入口，调用方不必改；
+    默认密码与 perm_type 沿用设备域原有的取值。
+    """
+    return await create_user_with_perms(
+        db,
+        username,
+        perm_codes,
         data_scope=data_scope,
-        org_id=org.id if org else None,
+        org=org,
+        password="Device1234",
+        perm_type="button",
     )
-    user.roles.append(role)
-    db.add(user)
-    await db.commit()
-    await db.refresh(user)
-    return user
 
 
 def auth_headers(user: User) -> dict:
