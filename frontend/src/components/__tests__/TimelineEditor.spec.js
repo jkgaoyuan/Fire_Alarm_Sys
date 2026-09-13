@@ -30,6 +30,16 @@ function node(id, overrides = {}) {
   }
 }
 
+/**
+ * 后端 /emergency/events/{id}/timelines 返回的是
+ * `{code, data: {items, total}}`，不是裸数组。
+ * 早期用例把它 mock 成 `{data: [...]}`，迁就了组件的错误假设，
+ * 导致「时间轴永不渲染」的缺陷被假绿掩盖。
+ */
+function timelineResponse(nodes) {
+  return { data: { items: nodes, total: nodes.length } }
+}
+
 function mountEditor(props = {}) {
   const pinia = createPinia()
   setActivePinia(pinia)
@@ -44,14 +54,17 @@ function mountEditor(props = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  getEventTimelines.mockResolvedValue({ data: [] })
+  getEventTimelines.mockResolvedValue(timelineResponse([]))
 })
 
 describe('时间轴编辑器（3.5-F3 / FR-028）', () => {
   it('T8-1: 只读模式按时间轴渲染节点与节点名称', async () => {
-    getEventTimelines.mockResolvedValue({
-      data: [node(1), node(2, { node_type: 'manual_confirm', remark: '值班员现场核实' })],
-    })
+    getEventTimelines.mockResolvedValue(
+      timelineResponse([
+        node(1),
+        node(2, { node_type: 'manual_confirm', remark: '值班员现场核实' }),
+      ])
+    )
     const wrapper = mountEditor({ readOnly: true })
     await flushPromises()
 
@@ -72,7 +85,7 @@ describe('时间轴编辑器（3.5-F3 / FR-028）', () => {
   })
 
   it('T8-3: 无节点时展示空状态', async () => {
-    getEventTimelines.mockResolvedValue({ data: [] })
+    getEventTimelines.mockResolvedValue(timelineResponse([]))
     const wrapper = mountEditor()
     await flushPromises()
 
@@ -81,7 +94,7 @@ describe('时间轴编辑器（3.5-F3 / FR-028）', () => {
 
   it('T8-4: 提交新增节点会携带节点类型与备注', async () => {
     addTimelineNode.mockResolvedValue({ data: {} })
-    getEventTimelines.mockResolvedValue({ data: [] })
+    getEventTimelines.mockResolvedValue(timelineResponse([]))
     const wrapper = mountEditor({ readOnly: false })
     await flushPromises()
 
@@ -121,7 +134,9 @@ describe('时间轴编辑器（3.5-F3 / FR-028）', () => {
 
   it('T8-6: 删除节点调用删除接口并刷新列表', async () => {
     deleteTimelineNode.mockResolvedValue({})
-    getEventTimelines.mockResolvedValue({ data: [node(5, { node_type: 'fire_controlled' })] })
+    getEventTimelines.mockResolvedValue(
+      timelineResponse([node(5, { node_type: 'fire_controlled' })])
+    )
     const wrapper = mountEditor({ readOnly: false })
     await flushPromises()
 

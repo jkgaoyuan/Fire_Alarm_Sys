@@ -100,7 +100,7 @@ async def test_user(db_session):
 
     # 创建巡检相关权限
     permissions = []
-    for perm_code in ["inspection:view", "inspection:create", "inspection:update", "inspection:execute", "inspection:stat"]:
+    for perm_code in ["inspection:view", "inspection:create", "inspection:update", "inspection:delete", "inspection:execute", "inspection:stat"]:
         perm = Permission(
             perm_code=perm_code,
             perm_name=perm_code.split(":")[1].title(),  # view -> View, create -> Create
@@ -109,8 +109,11 @@ async def test_user(db_session):
         )
         permissions.append(perm)
         db_session.add(perm)
-    
+
     await db_session.flush()
+
+    # 异步会话下未加载的集合会触发懒加载并抛出 MissingGreenlet，需先显式加载
+    await db_session.refresh(role, ["permissions"])
 
     # 将权限关联到角色
     role.permissions.extend(permissions)
@@ -126,7 +129,7 @@ async def test_user(db_session):
     user.roles.append(role)
     db_session.add(user)
     await db_session.commit()
-    await db_session.refresh(user)
+    await db_session.refresh(user, ["roles"])
     return user
 
 
@@ -187,12 +190,14 @@ async def auth_headers(db_session, test_user):
         await db_session.flush()
     
     # 将权限添加到 test_user 的角色中
+    # 异步会话下未加载的集合会触发懒加载并抛出 MissingGreenlet，需先显式加载
     for role in test_user.roles:
+        await db_session.refresh(role, ["permissions"])
         if view_perm not in role.permissions:
             role.permissions.append(view_perm)
         if export_perm not in role.permissions:
             role.permissions.append(export_perm)
-    
+
     await db_session.commit()
     return statistics_auth_headers(test_user)
 
@@ -237,10 +242,11 @@ async def viewer_user(db_session):
     )
     db_session.add(role)
     await db_session.flush()
-    
-    # 只添加 view 权限
+
+    # 只添加 view 权限（异步会话下需先显式加载集合，否则懒加载抛 MissingGreenlet）
+    await db_session.refresh(role, ["permissions"])
     role.permissions.append(view_perm)
-    
+
     # 创建用户
     user = User(
         username="viewer_e2e",
@@ -252,7 +258,7 @@ async def viewer_user(db_session):
     user.roles.append(role)
     db_session.add(user)
     await db_session.commit()
-    await db_session.refresh(user)
+    await db_session.refresh(user, ["roles"])
     return user
 
 

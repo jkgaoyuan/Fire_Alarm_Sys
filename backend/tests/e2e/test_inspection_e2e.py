@@ -1,319 +1,190 @@
 """
-3.6 设备巡检 - E2E 集成测试用例（后端）
-=========================================
-覆盖率目标：80%+
-核心功能覆盖：
-- FR-032: 巡检计划 CRUD + 权限验证
-- FR-033: 任务生成与状态管理  
-- FR-034: 巡检记录提交 + 权限验证
-- FR-035: 漏检统计 + 预警通知
+端到端回归 - 设备巡检（3.6 FR-032 ~ FR-036）
+=============================================
+覆盖巡检计划「操作列」对应的全部后端能力：
 
-运行方式：
-    pytest backend/tests/e2e/test_inspection_e2e.py -v --tb=short
+- 创建 → 列表 → 详情 → 编辑 → 启用/停用 → 生成任务 → 删除
+- 已启用计划不允许删除（业务前置 400）
+- 删除后再次查询走统一响应体 code=404（HTTP 仍是 200，见 testing-guidelines 第六节第 1 条）
+- 维保人员可查看计划但不可管理计划（403）
+
+运行方式（需真实容器）：
+
+    docker compose up -d
+    cd backend && E2E_BASE_URL=http://localhost:8000/api/v1 \
+        python -m pytest -m e2e tests/e2e/test_inspection_e2e.py -v
+
+未设置 `E2E_BASE_URL` 时整个目录 skip，默认 `python -m pytest` 不依赖容器。
+依赖 `scripts/init_data.py` 的幂等预置数据（含 chief / maint 种子账号与巡检权限码）。
 """
 
-import pytest
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import date, timedelta
+import uuid
+from datetime import date
 
-from app.main import app
-from app.db.session import get_db
-from app.core.security import create_access_token, get_password_hash
-from app.models.base import Base
-from app.models.organization import Organization
-from app.models.device import Device
-from app.models.user import User, Role
+import pytest
+
+from tests.e2e.common import RUN_TAG
+
+pytestmark = pytest.mark.e2e
+
+
+# ==================== 夹具 ====================
+
+@pytest.fixture(scope="module")
+def responsible_id(chief) -> int:
+    """巡检责任人：取种子用户列表中的第一个（主管自身）"""
+    data = chief.unwrap("GET", "/users", params={"page": 1, "page_size": 1})
+    assert data["items"], "用户列表为空，请先执行 backend/scripts/init_data.py"
+    return data["items"][0]["id"]
 
 
 @pytest.fixture
-def client(db: Session):
-    """创建测试客户端"""
-    def get_db_override():
-        return db
-    
-    app.dependency_overrides[get_db] = get_db_override
-    with TestClient(app) as c:
-        yield c
-    app.dependency_overrides.clear()
+def created_plans():
+    """本轮创建的巡检计划 id，用例追加、夹具负责收尾清理"""
+    ids: list[int] = []
+    yield ids
+    # 清理在 _cleanup_plans 中统一执行（需要 chief 客户端）
+    return ids
 
 
-# ==================== 权限测试 ====================
+@pytest.fixture(autouse=True)
+def _cleanup_plans(chief, created_plans):
+    """
+    用例结束后按前缀清库。
 
-def test_duty_officer_cannot_access_inspection_plans(
-    client: TestClient,
-    db: Session,
-    get_operator_token: str
-):
-    """TC-PERM-001: 消防值班员访问巡检计划应返回 403"""
-    response = client.get(
-        "/api/v1/inspection-plans",
-        headers={"Authorization": f"Bearer {get_operator_token}"}
-    )
-    # 由于权限限制，应返回 403
-    assert response.status_code == 403
+    后端只允许删除「已停用」计划，因此先 toggle 关闭再删；
+    删除失败不抛错，只提示下一轮继续清（避免清理逻辑本身把用例判红）。
+    """
+    yield
+    leftovers = []
+    for plan_id in created_plans:
+        chief.post(f"/inspection-plans/{plan_id}/toggle", json={"is_enabled": False})
+        resp = chief.delete(f"/inspection-plans/{plan_id}")
+        if resp.json().get("code") not in (200, 404):
+            leftovers.append(f"{plan_id}({resp.json().get('message')})")
+    if leftovers:
+        print(f"\n[warn] 巡检计划清理未收敛，需下一轮清理: {leftovers}")
 
 
-def test_maintainer_can_view_but_not_create_plan(
-    client: TestClient,
-    db: Session,
-    get_maintainer_token: str,
-    org_fixture: Organization
-):
-    """TC-PERM-002: 维保人员可查看巡检计划但不可创建"""
-    # ✅ 查看列表成功
-    response = client.get(
-        "/api/v1/inspection-plans",
-        headers={"Authorization": f"Bearer {get_maintainer_token}"}
-    )
-    assert response.status_code in [200, 403]  # 无权限时 403，有权限时 200
-    
-    # ❌ 创建计划被拒绝
-    create_data = {
-        "plan_name": "测试计划",
-        "org_id": org_fixture.id,
+def plan_payload(prefix: str, org_id: int, responsible_user_id: int, **overrides) -> dict:
+    """巡检计划请求体，plan_name 带运行标记便于按前缀识别"""
+    payload = {
+        "plan_name": f"{RUN_TAG}{prefix}-计划-{uuid.uuid4().hex[:4].upper()}",
+        "org_id": org_id,
         "cycle_type": "daily",
-        "responsible_user_id": 1,
-        "start_date": date.today().isoformat()
+        "responsible_user_id": responsible_user_id,
+        "start_date": date.today().isoformat(),
     }
-    response = client.post(
-        "/api/v1/inspection-plans",
-        json=create_data,
-        headers={"Authorization": f"Bearer {get_maintainer_token}"}
+    payload.update(overrides)
+    return payload
+
+
+# ==================== 操作列全流程 ====================
+
+def test_plan_crud_workflow(chief, prefix, org_id, responsible_id, created_plans):
+    """TC-INS-E2E-001: 创建→列表→详情→编辑→停用→删除 全流程"""
+    # 1. 创建
+    payload = plan_payload(prefix, org_id, responsible_id)
+    plan = chief.unwrap("POST", "/inspection-plans", json=payload)
+    created_plans.append(plan["id"])
+    assert plan["plan_name"] == payload["plan_name"]
+    assert plan["is_enabled"] is True
+
+    # 2. 列表可检索到
+    listing = chief.unwrap(
+        "GET", "/inspection-plans", params={"page": 1, "page_size": 100}
     )
-    # 没有 inspection:create 权限，应返回 403
-    assert response.status_code == 403
+    assert any(item["id"] == plan["id"] for item in listing["items"])
+
+    # 3. 详情带统计字段
+    detail = chief.unwrap("GET", f"/inspection-plans/{plan['id']}")
+    assert detail["plan_name"] == payload["plan_name"]
+    for field in ("total_tasks", "completed_tasks", "missed_tasks", "completion_rate"):
+        assert field in detail
+
+    # 4. 编辑
+    updated = chief.unwrap(
+        "PUT",
+        f"/inspection-plans/{plan['id']}",
+        json={"plan_name": f"{payload['plan_name']}-已更新"},
+    )
+    assert updated["plan_name"].endswith("-已更新")
+
+    # 5. 停用
+    toggled = chief.unwrap(
+        "POST", f"/inspection-plans/{plan['id']}/toggle", json={"is_enabled": False}
+    )
+    assert toggled["is_enabled"] is False
+
+    # 6. 删除
+    resp = chief.delete(f"/inspection-plans/{plan['id']}")
+    assert resp.json()["code"] == 200
+
+    # 7. 再次查询：业务不存在走统一响应体 code=404，HTTP 仍是 200
+    after = chief.get(f"/inspection-plans/{plan['id']}")
+    assert after.status_code == 200
+    assert after.json()["code"] == 404
 
 
-def test_chief_has_full_inspection_permissions(
-    client: TestClient,
-    db: Session,
-    get_superuser_token: str,
-    org_fixture: Organization,
-    user_fixture: User
+def test_delete_enabled_plan_rejected(chief, prefix, org_id, responsible_id, created_plans):
+    """TC-INS-E2E-002: 已启用计划不可直接删除，应提示先停用"""
+    plan = chief.unwrap(
+        "POST",
+        "/inspection-plans",
+        json=plan_payload(prefix, org_id, responsible_id, is_enabled=True),
+    )
+    created_plans.append(plan["id"])
+
+    resp = chief.delete(f"/inspection-plans/{plan['id']}")
+    assert resp.status_code == 400
+    assert "请先停用" in resp.json()["detail"]
+
+
+def test_generate_tasks_for_plan(chief, prefix, org_id, responsible_id, created_plans):
+    """TC-INS-E2E-003: 手动生成任务后，任务列表可见当日任务"""
+    plan = chief.unwrap(
+        "POST",
+        "/inspection-plans",
+        json=plan_payload(prefix, org_id, responsible_id, is_enabled=True),
+    )
+    created_plans.append(plan["id"])
+
+    tasks = chief.unwrap(
+        "POST", f"/inspection-plans/{plan['id']}/generate", json={"days": 7}
+    )
+    assert isinstance(tasks, list)
+
+    listing = chief.unwrap(
+        "GET", "/inspection-tasks", params={"page": 1, "page_size": 100}
+    )
+    assert any(item["plan_id"] == plan["id"] for item in listing["items"])
+
+
+# ==================== 权限矩阵 ====================
+
+def test_maintainer_can_view_but_not_manage_plans(
+    maint, prefix, org_id, responsible_id
 ):
-    """TC-PERM-003: 消防主管拥有全部巡检相关接口访问权限"""
-    # ✅ 创建计划
-    response = client.post(
-        "/api/v1/inspection-plans",
-        json={
-            "plan_name": "测试计划",
-            "org_id": org_fixture.id,
-            "cycle_type": "daily",
-            "responsible_user_id": user_fixture.id,
-            "start_date": date.today().isoformat()
-        },
-        headers={"Authorization": f"Bearer {get_superuser_token}"}
+    """TC-INS-E2E-004: 维保人员可查看计划列表，但不可创建计划（403）"""
+    # 可查看
+    resp = maint.get("/inspection-plans", params={"page": 1, "page_size": 10})
+    assert resp.status_code == 200
+    assert resp.json()["code"] == 200
+
+    # 不可创建
+    resp = maint.post(
+        "/inspection-plans", json=plan_payload(prefix, org_id, responsible_id)
     )
-    assert response.status_code == 200
-    
-    plan_id = response.json()["data"]["id"]
-    
-    # ✅ 更新计划
-    response = client.put(
-        f"/api/v1/inspection-plans/{plan_id}",
-        json={"plan_name": "更新后的计划"},
-        headers={"Authorization": f"Bearer {get_superuser_token}"}
+    assert resp.status_code == 403
+    assert "缺少权限" in resp.json()["detail"]
+
+
+# ==================== 参数校验 ====================
+
+def test_invalid_cycle_type_rejected(chief, prefix, org_id, responsible_id):
+    """TC-INS-E2E-005: 非法周期类型应返回 422"""
+    resp = chief.post(
+        "/inspection-plans",
+        json=plan_payload(prefix, org_id, responsible_id, cycle_type="invalid_cycle"),
     )
-    assert response.status_code == 200
-    
-    # ✅ 查看详情
-    response = client.get(
-        f"/api/v1/inspection-plans/{plan_id}",
-        headers={"Authorization": f"Bearer {get_superuser_token}"}
-    )
-    assert response.status_code == 200
-    
-    # ✅ 手动生成任务
-    response = client.post(
-        f"/api/v1/inspection-plans/{plan_id}/generate",
-        json={"target_date": date.today().isoformat()},
-        headers={"Authorization": f"Bearer {get_superuser_token}"}
-    )
-    assert response.status_code == 200
-    
-    # ✅ 查询任务
-    response = client.get(
-        "/api/v1/inspection-tasks",
-        headers={"Authorization": f"Bearer {get_superuser_token}"}
-    )
-    assert response.status_code == 200
-
-
-# ==================== 功能测试 ====================
-
-def test_create_inspection_plan(
-    client: TestClient,
-    db: Session,
-    get_superuser_token: str,
-    org_fixture: Organization,
-    user_fixture: User
-):
-    """FR-032: 创建巡检计划"""
-    today = date.today()
-    response = client.post(
-        "/api/v1/inspection-plans",
-        json={
-            "plan_name": "每日巡检计划",
-            "org_id": org_fixture.id,
-            "device_type_id": None,  # 遍历所有设备类型
-            "cycle_type": "daily",
-            "cycle_days": None,
-            "responsible_user_id": user_fixture.id,
-            "start_date": today.isoformat(),
-            "end_date": (today + timedelta(days=365)).isoformat(),
-            "is_enabled": True
-        },
-        headers={"Authorization": f"Bearer {get_superuser_token}"}
-    )
-    
-    assert response.status_code == 200
-    data = response.json()["data"]
-    assert data["plan_name"] == "每日巡检计划"
-    assert data["cycle_type"] == "daily"
-    assert data["is_enabled"] == True
-
-
-def test_generate_and_execute_task(
-    client: TestClient,
-    db: Session,
-    get_superuser_token: str,
-    maintainer_user: User,
-    org_fixture: Organization,
-    device_fixture: Device
-):
-    """FR-033 & FR-034: 生成任务并执行巡检"""
-    today = date.today()
-    
-    # 1. 创建计划
-    plan_response = client.post(
-        "/api/v1/inspection-plans",
-        json={
-            "plan_name": "设备巡检计划",
-            "org_id": org_fixture.id,
-            "cycle_type": "daily",
-            "responsible_user_id": maintainer_user.id,
-            "start_date": today.isoformat(),
-            "is_enabled": True
-        },
-        headers={"Authorization": f"Bearer {get_superuser_token}"}
-    )
-    assert plan_response.status_code == 200
-    plan_id = plan_response.json()["data"]["id"]
-    
-    # 2. 手动生成今日任务
-    generate_response = client.post(
-        f"/api/v1/inspection-plans/{plan_id}/generate",
-        json={"target_date": today.isoformat()},
-        headers={"Authorization": f"Bearer {get_superuser_token}"}
-    )
-    assert generate_response.status_code == 200
-    tasks = generate_response.json()["data"]
-    assert len(tasks) >= 1
-    
-    task_id = tasks[0]["id"]
-    
-    # 3. 使用维保人员账号提交巡检记录
-    maintainer_token = get_maintainer_token  # 需要从 fixtures 获取
-    record_response = client.post(
-        f"/api/v1/inspection-tasks/{task_id}/records",
-        json={
-            "task_id": task_id,
-            "device_id": device_fixture.id,
-            "result": "normal",
-            "abnormal_desc": None,
-            "photos": []
-        },
-        headers={"Authorization": f"Bearer {get_maintainer_token}"}
-    )
-    
-    # 注意：这个测试依赖于 fixtures 中的 maintainer_token
-    # 实际运行时可能需要调整
-
-
-def test_scan_missed_tasks(
-    client: TestClient,
-    db: Session,
-    get_superuser_token: str
-):
-    """FR-035: 扫描漏检任务"""
-    response = client.get(
-        "/api/v1/inspection-missed-stats",
-        headers={"Authorization": f"Bearer {get_superuser_token}"}
-    )
-    
-    assert response.status_code == 200
-    data = response.json()["data"]
-    assert "missed_count" in data
-    assert "alert_count" in data
-
-
-# ==================== 数据范围过滤测试 ====================
-
-def test_data_scope_filtering_on_tasks(
-    client: TestClient,
-    db: Session,
-    get_superintendent_token: str,
-    maintenance_user: User,
-    org_fixture: Organization,
-    inspection_plan_with_multiple_orgs
-):
-    """TC-PERM-004: 巡检任务按用户数据范围过滤"""
-    token = get_superintendent_token
-    response = client.get(
-        "/api/v1/inspection-tasks",
-        params={"page": 1, "page_size": 20},
-        headers={"Authorization": f"Bearer {token}"}
-    )
-    
-    assert response.status_code == 200
-    tasks = response.json()["data"]["items"]
-    
-    # 主管应看到所有区域的任務
-    assert len(tasks) > 0
-
-
-# ==================== 异常场景测试 ====================
-
-def test_invalid_plan_creation(
-    client: TestClient,
-    get_superuser_token: str
-):
-    """异常场景：无效参数创建计划"""
-    
-    # 缺少必需字段
-    response = client.post(
-        "/api/v1/inspection-plans",
-        json={
-            "plan_name": "",  # 空名称
-            "cycle_type": "invalid_cycle"  # 无效周期类型
-        },
-        headers={"Authorization": f"Bearer {get_superuser_token}"}
-    )
-    
-    # Pydantic 会校验失败
-    assert response.status_code in [400, 422]
-
-
-def test_delete_enabled_plan_should_fail(
-    client: TestClient,
-    db: Session,
-    get_superuser_token: str,
-    inspection_plan: InspectionPlan
-):
-    """异常场景：删除已启用的计划应失败"""
-    
-    response = client.delete(
-        f"/api/v1/inspection-plans/{inspection_plan.id}",
-        headers={"Authorization": f"Bearer {get_superuser_token}"}
-    )
-    
-    assert response.status_code == 400
-    assert response.json()["detail"] == "已启用的计划无法直接删除，请先停用"
-
-
-# 需要导入的模型
-from app.models.inspection import InspectionPlan
-from app.models.organization import Organization
-from app.models.device import Device
-from app.models.user import User
+    assert resp.status_code == 422

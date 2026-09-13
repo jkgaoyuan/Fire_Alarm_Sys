@@ -107,6 +107,36 @@ cd backend && E2E_BASE_URL=http://localhost:8000/api/v1 python -m pytest -m e2e 
 14. **HTTP 422 的响应体是 FastAPI 默认 `{"detail":[...]}`，不是统一信封**（仓库无 `RequestValidationError` 处理器），
     实测：`format=pdf` → `{"detail":[{"type":"string_pattern_mismatch",...}]}`。
     前端拦截器与测试都不能按 `body.code` 读它。四类口径要分清：权限 403 / 业务前置与状态机 400 / 字段校验 422 / 资源不存在 200+`code=404`。
+15. **巡检模块的写接口信封是 `code=201`**：POST 新建返回 HTTP 201，`/toggle` 是 HTTP 200 + 信封 `code=201`。
+    只断言 `status_code == 200` 或 `body["code"] == 200` 都会假红——统一用「HTTP 2xx 且信封 code 2xx」判定
+    （见 `tests/test_inspection_api.py` 的 `assert_ok`）。
+16. **异步夹具里对已 flush 的对象取未加载集合会抛 `MissingGreenlet`**。
+    `db_session.add(role); await db_session.flush(); role.permissions.extend(...)` 必炸。
+    关联要在 flush **之前**完成，或先 `await db_session.refresh(obj, ["permissions"])`；
+    收尾的 `refresh(user)` 要写成 `refresh(user, ["roles"])`，否则下游 `user.roles` 同样炸。
+    `tests/conftest.py` 的 `test_user` / `auth_headers` / `viewer_user` 三处均已按此修正。
+17. **Element Plus 2.x 校验失败项挂在 `.el-form-item.is-error`**，不是 `el-form-item--error`；
+    且 async-validator 是异步的，点击提交后要 `await flushPromises()` 两轮再断言，否则恒为 0（假绿/假红都出现过）。
+18. **布尔型筛选值 `false` 会被 `||` 吞掉**：`is_enabled: form.is_enabled || undefined` 在选「已停用」时
+    把条件整个丢掉、退化成「全部」。布尔与 `0` 值筛选一律用 `??`。
+19. **不要为不存在的全局 stub 掉接口层，断言要落在 API 模块函数上**。
+    `inspection/Plan.vue` 的操作列曾直接调 `window.$axios(...)`——这个全局全仓库从未注册过，
+    三个按钮必然抛 `TypeError`。而测试里一句 `window.$axios = vi.fn()` 就把这层掩盖成了假绿。
+    正确做法：mock `@/api/<模块>` 导出的函数，并**点击按钮后断言该函数以正确参数被调用**
+    （见 `views/inspection/__tests__/Plan.spec.js` T11–T14）。只断言「按钮存在」是无效覆盖。
+    同一模块内出现裸 axios / `window.$` 调用时，先确认该全局是否真的被注册过。
+20. **不要在 `el-table` 的 scoped slot 里用 `v-if`/`v-else` 包一层 `<template>`**。
+    `fixed="right"` 的列会被 el-table 复制一份渲染，嵌套 `<template>` 会让复制出的
+    那一份**丢掉 `row` 绑定**（实测 slot 里的 `row` 变成 `null`，`row.id` 取到 `undefined`）。
+    症状很隐蔽：按文案取按钮的测试会点到那份坏行，接口收到 `id=undefined` 却不报错。
+    改用平铺的 `v-if="条件"` / `v-if="!条件"` 展开每个按钮，并把外层冗余 `<template>` 去掉。
+    排查这种问题别靠读模板，直接 dump 渲染结果比对（`findAll('button')` + 点击后打印入参）。
+21. **`src/api/__tests__/<模块>.spec.js` 是唯一能拦住「参数放错位置」的层**。
+    组件测试 mock 掉了 API 模块，后端测试直连接口，两端都绿而中间断掉：
+    `generateInspectionTasks` 曾把 `days` 发成 **query**，后端却从 **JSON body** 读 → 线上 422 `Field required`。
+    凡是 POST/PUT，都必须有一条用例断言 `data`（body）与 `params`（query）各自落在哪一侧；
+    只断言 URL 和 method 不够。反向的同类坑：后端 `data: dict` 是**必填** body，调用方不带 body 也 422——
+    字段全可选的 body 应声明成 `dict | None = Body(default=None)`，并由「不带 body」用例守护。
 
 ## 七、缺陷与守护用例的绑定规则
 
