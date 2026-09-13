@@ -5,8 +5,13 @@
 依赖主 conftest.py 中的 fixtures: client, test_user, test_client_with_user
 
 断言口径遵循 testing-guidelines 第三节：统一走响应信封 `code` / `message` / `data`，
-而不是只看 HTTP 状态——本模块的 POST 新建按 REST 约定返回 HTTP 201（信封 code=201），
-`/toggle` 同样是 HTTP 200 + 信封 code=201，只看 `status_code == 200` 会误判。
+而不是只看 HTTP 状态。
+
+HTTP 状态码与信封 `code` 是两件事：新建按 REST 约定返回 HTTP 201，但**信封 code 恒为 200**
+（见 `docs/plan/API_RESPONSE_FORMAT_SPECIFICATION.md` 原则 1 与前端检查项「是否检查了
+`res.code === 200`」）。曾经三条写接口的信封写成 `code=201, message="Created"`，
+被下面的 `assert_ok` 以「兼容 200/201」的方式掩盖，最终导致前端 PUT 报 "Created" 错误——
+守护用例见 TC-INS-015，本辅助函数不得再放宽回 `in (200, 201)`。
 """
 
 from datetime import date
@@ -21,10 +26,15 @@ from app.models.user import Role, User
 # ==================== 辅助函数 ====================
 
 def assert_ok(response):
-    """断言统一响应体成功并返回 data（兼容 HTTP 200 与 REST 201）"""
+    """
+    断言请求成功并返回 data。
+
+    HTTP 允许 200/201（新建按 REST 约定是 201），但**信封 code 必须严格是 200**——
+    放宽成 `in (200, 201)` 会把「更新接口返回创建语义信封」这类契约缺陷洗成绿色。
+    """
     assert response.status_code in (200, 201), response.text
     body = response.json()
-    assert body["code"] in (200, 201), body
+    assert body["code"] == 200, body
     return body.get("data")
 
 
@@ -220,6 +230,37 @@ async def test_toggle_plan_status(test_client_with_user, test_user):
         json={"is_enabled": True},
     )
     assert assert_ok(resp)["is_enabled"] is True
+
+
+@pytest.mark.asyncio
+async def test_write_success_envelope_code_is_200(test_client_with_user, test_user):
+    """
+    TC-INS-015: 写接口成功时信封 code 必须是 200，不能沿用创建接口的 201/"Created"。
+
+    不修会怎样：`PlanForm.vue` 的提交分支是 `if (result.code === 200)`。
+    PUT 返回信封 code=201 时数据其实已落库，但前端判定为失败 →
+    弹出一条文案为 "Created" 的错误提示，且不 emit success、不关闭弹窗、不刷新列表。
+    `/toggle` 有同样的缺陷，只是 `Plan.vue` 恰好不读 code 才没暴露。
+    """
+    plan = await create_plan(
+        test_client_with_user, test_user.id, plan_name="信封校验计划"
+    )
+
+    resp = await test_client_with_user.put(
+        f"/api/v1/inspection-plans/{plan['id']}",
+        json={"plan_name": "信封校验计划-改"},
+    )
+    body = resp.json()
+    assert body["code"] == 200, f"PUT 信封 code 应为 200，实际 {body['code']}"
+    assert body["message"] != "Created", "更新接口不应返回创建语义的 message"
+
+    resp = await test_client_with_user.post(
+        f"/api/v1/inspection-plans/{plan['id']}/toggle",
+        json={"is_enabled": False},
+    )
+    body = resp.json()
+    assert body["code"] == 200, f"/toggle 信封 code 应为 200，实际 {body['code']}"
+    assert body["message"] != "Created", "状态切换不应返回创建语义的 message"
 
 
 @pytest.mark.asyncio

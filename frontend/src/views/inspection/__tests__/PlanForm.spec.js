@@ -5,6 +5,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { ElMessage } from 'element-plus'
 import PlanForm from '../PlanForm.vue'
 import { mountOptions, overlayStub } from '@/views/device/__tests__/mount'
 
@@ -108,7 +109,8 @@ describe('PlanForm.vue', () => {
   })
 
   it('T4: 编辑模式提交成功', async () => {
-    updateInspectionPlan.mockResolvedValue({ code: 200 })
+    // 用后端真实的成功信封（message 为中文），而不是空壳 { code: 200 }
+    updateInspectionPlan.mockResolvedValue({ code: 200, message: '更新成功' })
     const wrapper = mountForm({
       plan: {
         id: 1,
@@ -140,6 +142,38 @@ describe('PlanForm.vue', () => {
       })
     )
     expect(wrapper.emitted('success')).toBeDefined()
+  })
+
+  it('T6: 编辑提交成功后不得弹出错误提示', async () => {
+    // 守护线上症状：后端 PUT 一度返回信封 code=201/message="Created"，
+    // 而提交分支判的是 `result.code === 200` → 数据已落库却弹出文案为 "Created" 的
+    // 错误提示，且不 emit success。此处钉死「成功信封必须走成功分支」。
+    updateInspectionPlan.mockResolvedValue({ code: 200, message: '更新成功' })
+    const errorSpy = vi.spyOn(ElMessage, 'error')
+
+    const wrapper = mountForm({
+      plan: {
+        id: 2,
+        plan_name: '原名称',
+        org_id: 1,
+        device_type_id: 11,
+        cycle_type: 'daily',
+        responsible_user_id: 3,
+        start_date: '2026-09-01',
+        end_date: null,
+        is_enabled: true,
+      },
+    })
+    await flushPromises()
+
+    const submitBtn = wrapper.findAll('button').find((b) => b.text().includes('确定'))
+    await submitBtn.trigger('click')
+    await flushPromises()
+
+    expect(errorSpy).not.toHaveBeenCalled()
+    expect(wrapper.emitted('success')).toBeDefined()
+
+    errorSpy.mockRestore()
   })
 
   it('T5: 取消关闭弹窗并 emit update:modelValue', async () => {

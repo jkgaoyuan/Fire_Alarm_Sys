@@ -151,7 +151,7 @@ async def create_inspection_plan(
     db.add(plan)
     await db.commit()
     await db.refresh(plan)
-    return Response(code=201, message="Created", data=InspectionPlanResponse.model_validate(plan))
+    return Response(code=200, message="创建成功", data=InspectionPlanResponse.model_validate(plan))
 
 
 @router.get(
@@ -216,7 +216,7 @@ async def update_inspection_plan(
     
     await db.commit()
     await db.refresh(plan)
-    return Response(code=201, message="Created", data=InspectionPlanResponse.model_validate(plan))
+    return Response(code=200, message="更新成功", data=InspectionPlanResponse.model_validate(plan))
 
 
 @router.delete(
@@ -270,7 +270,7 @@ async def toggle_inspection_plan_status(
     plan.is_enabled = data.get("is_enabled", not plan.is_enabled)
     await db.commit()
     await db.refresh(plan)
-    return Response(code=201, message="Created", data=InspectionPlanResponse.model_validate(plan))
+    return Response(code=200, message="状态更新成功", data=InspectionPlanResponse.model_validate(plan))
 
 
 @router.post(

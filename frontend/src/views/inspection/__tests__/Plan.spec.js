@@ -234,7 +234,7 @@ describe('巡检计划列表页（3.6-F1）', () => {
   })
 
   it('T12: 点击停用调用切换接口并传入取反后的状态', async () => {
-    toggleInspectionPlanStatus.mockResolvedValue({ code: 201 })
+    toggleInspectionPlanStatus.mockResolvedValue({ code: 200 })
     const wrapper = await mountPlan()
 
     const rows = wrapper.findAll('.el-table__body tbody tr')
@@ -246,7 +246,7 @@ describe('巡检计划列表页（3.6-F1）', () => {
   })
 
   it('T13: 点击启用调用切换接口并传入 true', async () => {
-    toggleInspectionPlanStatus.mockResolvedValue({ code: 201 })
+    toggleInspectionPlanStatus.mockResolvedValue({ code: 200 })
     const wrapper = await mountPlan()
 
     const rows = wrapper.findAll('.el-table__body tbody tr')

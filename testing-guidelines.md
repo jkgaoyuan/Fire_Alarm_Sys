@@ -107,9 +107,16 @@ cd backend && E2E_BASE_URL=http://localhost:8000/api/v1 python -m pytest -m e2e 
 14. **HTTP 422 的响应体是 FastAPI 默认 `{"detail":[...]}`，不是统一信封**（仓库无 `RequestValidationError` 处理器），
     实测：`format=pdf` → `{"detail":[{"type":"string_pattern_mismatch",...}]}`。
     前端拦截器与测试都不能按 `body.code` 读它。四类口径要分清：权限 403 / 业务前置与状态机 400 / 字段校验 422 / 资源不存在 200+`code=404`。
-15. **巡检模块的写接口信封是 `code=201`**：POST 新建返回 HTTP 201，`/toggle` 是 HTTP 200 + 信封 `code=201`。
-    只断言 `status_code == 200` 或 `body["code"] == 200` 都会假红——统一用「HTTP 2xx 且信封 code 2xx」判定
-    （见 `tests/test_inspection_api.py` 的 `assert_ok`）。
+15. **HTTP 状态码与信封 `code` 是两件事，信封成功值恒为 200**。
+    `docs/plan/API_RESPONSE_FORMAT_SPECIFICATION.md` 原则 1 与前端检查项（「是否检查了 `res.code === 200`」）
+    都把 200 定成唯一的成功码，前端 `PlanForm.vue` / `ExecutionDialog.vue` 也据此判定。
+    HTTP 状态码可以按 REST 走（新建 201），但**信封里仍要写 `code=200`**。
+    **本条曾是错的**：`inspection.py` 的 create/update/toggle 三个写接口一度都返回
+    `Response(code=201, message="Created")`，本文件把它当成「模块契约」记录下来，
+    `assert_ok` 也随之放宽成 `body["code"] in (200, 201)`——契约缺陷于是被洗成绿色基线，
+    直到线上 `PUT /inspection-plans/{id}` 弹出文案为 "Created" 的错误提示才暴露（守护用例 TC-INS-015）。
+    教训：**辅助断言函数不得为了「兼容」而放宽成功码的取值集合**；拿不准时去读规范文档，
+    而不是把观测到的现状写成契约。
 16. **异步夹具里对已 flush 的对象取未加载集合会抛 `MissingGreenlet`**。
     `db_session.add(role); await db_session.flush(); role.permissions.extend(...)` 必炸。
     关联要在 flush **之前**完成，或先 `await db_session.refresh(obj, ["permissions"])`；
@@ -137,6 +144,14 @@ cd backend && E2E_BASE_URL=http://localhost:8000/api/v1 python -m pytest -m e2e 
     凡是 POST/PUT，都必须有一条用例断言 `data`（body）与 `params`（query）各自落在哪一侧；
     只断言 URL 和 method 不够。反向的同类坑：后端 `data: dict` 是**必填** body，调用方不带 body 也 422——
     字段全可选的 body 应声明成 `dict | None = Body(default=None)`，并由「不带 body」用例守护。
+
+22. **前端组件测试的 mock 是「我以为的契约」，不是后端真实的契约**——`PlanForm.spec.js` 的 T4
+    一直用 `updateInspectionPlan.mockResolvedValue({ code: 200 })`，组件测试全绿，
+    真实后端却回 201（见第 15 条）。**mock 掉 API 模块的测试永远拦不住后端契约漂移**，
+    因为两侧各自断言自己那一半。能拦住它的只有「不 mock、真打接口」的层：
+    后端 pytest（用 `assert_ok` 钉死信封 code）+ `src/api/__tests__/<模块>.spec.js`（钉死参数落位）。
+    mock 里请填**后端真实返回的信封**（含 `message`），不要用 `{ code: 200 }` 这种空壳——
+    空壳会让「成功分支的文案/字段依赖」这类断言全部失效。
 
 ## 七、缺陷与守护用例的绑定规则
 
