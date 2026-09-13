@@ -14,7 +14,7 @@
 
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
-from sqlalchemy import select
+from sqlalchemy import false, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -32,6 +32,50 @@ from app.models.user import User
 
 
 # ==================== 辅助函数 ====================
+
+async def apply_task_data_scope(query, user: User, db: AsyncSession):
+    """
+    按用户 data_scope 过滤巡检任务（3.6 计划第 278 行）。
+
+    **刻意不复用 `user_service.apply_data_scope`**：那个函数对 `self` 锚
+    `created_by`、对 `dept` 锚 `org_id`，而 `InspectionTask` 两个字段都没有
+    （见 `app/models/inspection.py`），`hasattr` 守卫会让它静默返回原查询——
+    表现是「过滤像是调了，实际谁都能看全部」，比不调更危险。
+
+    任务的口径：
+    - `all`  -> 不过滤
+    - `self` -> 只看责任人是自己的任务（任务的「归属」是 responsible_user_id，
+               不是 created_by——后者是生成任务的操作人，通常是管理员）
+    - `dept` -> 只看本部门及子部门（经 plan.org_id）下的任务
+    """
+    if user.data_scope == "all":
+        return query
+
+    if user.data_scope == "dept":
+        if user.org_id is None:
+            return query.where(false())
+
+        from app.models.organization import Organization
+
+        cte = (
+            select(Organization.id)
+            .where(Organization.id == user.org_id)
+            .cte(recursive=True)
+        )
+        cte = cte.union_all(
+            select(Organization.id).where(Organization.parent_id == cte.c.id)
+        )
+        org_ids = [row[0] for row in (await db.execute(select(cte.c.id))).all()]
+
+        if not org_ids:
+            return query.where(false())
+
+        plan_ids = select(InspectionPlan.id).where(InspectionPlan.org_id.in_(org_ids))
+        return query.where(InspectionTask.plan_id.in_(plan_ids))
+
+    # self（含未识别的取值，取最小可见权限）
+    return query.where(InspectionTask.responsible_user_id == user.id)
+
 
 def get_next_dates_by_cycle(start_date: date, cycle_type: InspectionCycleType, count: int) -> List[date]:
     """
@@ -103,9 +147,15 @@ async def generate_tasks_for_plan(
         
     Returns:
         新创建的任务列表
-        
+
     Raises:
         AuthError: 计划不存在或已禁用
+
+    Note:
+        **本函数只 `flush`，不 `commit`。** `get_db` 依赖在 finally 里只 close 不 commit，
+        未提交的事务会被回滚，所以调用方必须显式 `await db.commit()`
+        ——循环调用时在循环外提交一次即可。漏掉就会「接口返回了任务、库里一行没有」。
+        （`CRUDBase.create` 自带 commit，手写 `db.add` 的路径没有这层保护。）
     """
     # 1. 获取计划详情
     stmt = (
@@ -423,7 +473,10 @@ class InspectionService:
         for target_date in future_dates:
             tasks = await generate_tasks_for_plan(db, plan_id, target_date)
             generated.extend(tasks)
-        
+
+        # 与 API 端点同样的收口：generate_tasks_for_plan 只 flush，调用方必须提交
+        await db.commit()
+
         return generated
     
     @staticmethod

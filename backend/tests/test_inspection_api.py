@@ -264,6 +264,46 @@ async def test_write_success_envelope_code_is_200(test_client_with_user, test_us
 
 
 @pytest.mark.asyncio
+async def test_generate_tasks_are_committed(test_client_with_user, test_user, db_session):
+    """
+    TC-INS-016: 生成的任务必须真正提交，rollback 之后仍应在库里。
+
+    不修会怎样：`generate_tasks_for_plan` 只 `db.add()` + `flush()`，不 commit；
+    而 `get_db` 在 finally 里只 close 不 commit → 事务被回滚。
+    线上实测过：接口返回 7 条任务、`inspection_tasks` 表 0 行——
+    前端弹「已生成 7 天的巡检任务」，任务页却是空的。
+
+    为什么旧用例抓不到：测试的 client 与 db_session 共用同一个会话，
+    未提交的行对同一个会话可见，于是 `total` 照样是对的。
+    这里用 `rollback()` 主动丢弃未提交变更——提交过的行不受影响，只 flush 的会消失。
+    """
+    plan = await create_plan(
+        test_client_with_user, test_user.id, plan_name="提交校验计划", is_enabled=True
+    )
+
+    resp = await test_client_with_user.post(
+        f"/api/v1/inspection-plans/{plan['id']}/generate", json={"days": 3}
+    )
+    assert len(assert_ok(resp)) == 3
+
+    # 丢弃该会话里一切未提交的变更；若上面没 commit，任务会就此消失
+    await db_session.rollback()
+
+    from sqlalchemy import func, select
+
+    from app.models.inspection import InspectionTask
+
+    total = (
+        await db_session.execute(
+            select(func.count()).select_from(InspectionTask).where(
+                InspectionTask.plan_id == plan["id"]
+            )
+        )
+    ).scalar_one()
+    assert total == 3, f"生成后未提交：rollback 后只剩 {total} 条，期望 3 条"
+
+
+@pytest.mark.asyncio
 async def test_generate_tasks(test_client_with_user, test_user):
     """TC-INS-011: 手动生成巡检任务应返回任务列表"""
     plan = await create_plan(

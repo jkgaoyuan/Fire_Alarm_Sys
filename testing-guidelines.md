@@ -153,6 +153,30 @@ cd backend && E2E_BASE_URL=http://localhost:8000/api/v1 python -m pytest -m e2e 
     mock 里请填**后端真实返回的信封**（含 `message`），不要用 `{ code: 200 }` 这种空壳——
     空壳会让「成功分支的文案/字段依赖」这类断言全部失效。
 
+23. **「能不能查到」和「有没有提交」是两件事——测试里默认查不出后者**。
+    `client` 与 `db_session` **共用同一个会话**，未 commit 的行对同一会话可见。
+    所以 `generate` 只 `db.add()` + `flush()` 就返回时，接口回 7 条、测试里查也是 7 条，
+    而线上 `get_db` 在 finally 里只 close 不 commit → 事务回滚 → 库里 0 行、任务页空白。
+    这类用例必须**主动丢弃未提交变更再断言**：
+    ```python
+    await client.post(...)          # 打接口
+    await db_session.rollback()     # 提交过的行不受影响，只 flush 的会消失
+    assert (await db_session.execute(select(func.count())...)).scalar_one() == 3
+    ```
+    见 `tests/test_inspection_api.py::test_generate_tasks_are_committed`。
+    背景：`CRUDBase.create` 自带 `commit()`，而服务层手写 `db.add()` 的路径没有这层保护，
+    `get_db` 也不兜底——**新写 `db.add()` 时先问一句「谁负责 commit」**。
+
+24. **`apply_data_scope` 对没有 `created_by` / `org_id` 的模型会静默变成 no-op**。
+    该函数用 `hasattr(model, ...)` 守卫，属性缺失时**原样返回查询**——调用看起来生效了，
+    实际谁都能看全部，比不调更危险。`InspectionTask` 两个字段都没有（只有
+    `plan_id` / `responsible_user_id`），所以数据范围要写域内专用函数
+    （`inspection_service.apply_task_data_scope`）：`self` 锚 `responsible_user_id`
+    ——**不是 `created_by`**，任务是管理员/定时生成的，按 `created_by` 过滤会让
+    被指派的人一条都看不到；`dept` 经 `plan.org_id` 折算，口径是「本部门及**子**部门」，
+    挂在父节点的数据不可见（与 P1-007 对 devices 的口径一致）。
+    另：过滤必须同时作用于 items 与 `total` 用的那条 stmt，否则会出现「总数 2、只回 1 条」。
+
 ## 七、缺陷与守护用例的绑定规则
 
 - 每修复一个生产缺陷，**同一提交内必须带守护用例**，并在测试报告第四节记全三列：现象 / 修复 / 守护手段。

@@ -31,8 +31,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 
-from app.core.dependencies import get_db, require_permission
+from app.core.dependencies import get_db, get_current_active_user, require_permission
 from app.models.inspection import InspectionPlan, InspectionTask, InspectionRecord
+from app.models.user import User
 from app.schemas.auth import ResponseModel as Response
 from app.schemas.inspection import (
     InspectionPlanCreate,
@@ -50,6 +51,7 @@ from app.schemas.inspection import (
 )
 from app.crud.inspection import inspection_plan_crud, inspection_task_crud, inspection_record_crud
 from app.services.inspection_service import (
+    apply_task_data_scope,
     generate_tasks_for_plan,
     submit_inspection_record,
     InspectionService,
@@ -316,7 +318,13 @@ async def manual_generate_tasks(
             task_list = await generate_tasks_for_plan(db, plan_id, td)
             generated.extend(task_list)
         tasks = generated
-    
+
+    # 必须显式提交：generate_tasks_for_plan 只做 flush，而 get_db 在 finally 里
+    # 只 close 不 commit——未提交的事务会被回滚。曾经因此出现「接口返回 7 条任务、
+    # 库里 0 行」：前端弹生成成功，任务页却是空的。
+    # 在循环外提交一次，保证批量生成要么全成、要么全不成。
+    await db.commit()
+
     tasks = [InspectionTaskResponse.model_validate(t) for t in tasks]
     return Response(code=200, message="Generated", data=tasks)
 
@@ -336,26 +344,31 @@ async def get_inspection_tasks(
     end_date: Optional[date] = None,
     status: Optional[str] = None,
     responsible_user_id: Optional[int] = None,
+    user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """分页查询巡检任务列表"""
+    """分页查询巡检任务列表（受 data_scope 约束）"""
     skip = (page - 1) * page_size
     today = date.today()
-    
-    # 默认范围：今天及过去 30 天
+
+    # 默认下限为本月 1 日；**不设隐式上限**——/generate 产出的就是未来任务，
+    # 上限截到今天会让刚生成的任务全部不可见（实测：库里 7 条、列表 1 条）。
+    # 只有调用方显式传 end_date 时才收窄。
     effective_start = start_date or (today.replace(day=1))
-    effective_end = end_date or today
-    
-    stmt = select(InspectionTask).where(
-        InspectionTask.task_date >= effective_start,
-        InspectionTask.task_date <= effective_end,
-    )
-    
+
+    stmt = select(InspectionTask).where(InspectionTask.task_date >= effective_start)
+    if end_date:
+        stmt = stmt.where(InspectionTask.task_date <= end_date)
+
     if status:
         stmt = stmt.where(InspectionTask.status == status)
     if responsible_user_id:
         stmt = stmt.where(InspectionTask.responsible_user_id == responsible_user_id)
-    
+
+    # 数据范围（3.6 计划第 278 行）：任务表没有 created_by / org_id，
+    # 不能复用 user_service.apply_data_scope，见该函数注释
+    stmt = await apply_task_data_scope(stmt, user, db)
+
     # 总数统计
     count_stmt = select(func.count()).select_from(stmt.subquery())
     total = (await db.execute(count_stmt)).scalar_one_or_none()
@@ -424,7 +437,12 @@ async def submit_record(
         abnormal_desc=data.abnormal_desc,
         photos=data.photos,
     )
-    
+
+    # 同 generate：service 只 flush，提交必须由这里收口，否则记录与任务状态一并回滚。
+    # 注意「正常」结果只走这条路径，不提交就整条丢；「异常」结果因内部调用
+    # repair_crud.create（CRUDBase.create 自带 commit）而被顺带提交——
+    # 这层不一致会让缺陷看起来时有时无。
+    await db.commit()
     await db.refresh(record)
     return Response(code=200, message="success", data=InspectionRecordResponse.model_validate(record))
 
