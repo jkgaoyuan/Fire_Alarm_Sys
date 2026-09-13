@@ -65,6 +65,12 @@
         <el-form-item label="显示已退役">
           <el-switch v-model="searchForm.include_retired" @change="handleSearch" />
         </el-form-item>
+        <el-form-item label="回收站">
+          <el-switch
+            v-model="searchForm.include_deleted"
+            @change="handleSearch"
+          />
+        </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleSearch">搜索</el-button>
           <el-button @click="handleReset">重置</el-button>
@@ -127,7 +133,20 @@
         </el-table-column>
         <el-table-column label="操作" width="240" align="center" fixed="right">
           <template #default="{ row }">
+            <!-- 回收站视图下只提供「恢复」，软删记录无法编辑/退役。
+                 注意：这里刻意用平铺的 v-if 而不是 v-if/v-else 包一层 <template>，
+                 后者会让 el-table 的 fixed 列复制行时丢掉 row 绑定。 -->
             <el-button
+              v-if="searchForm.include_deleted"
+              v-permission="'device:delete'"
+              link
+              type="primary"
+              @click="handleRestore(row)"
+            >
+              恢复
+            </el-button>
+            <el-button
+              v-if="!searchForm.include_deleted"
               v-permission="'device:view'"
               link
               type="primary"
@@ -136,7 +155,7 @@
               查看
             </el-button>
             <el-button
-              v-if="!isTerminalStatus(row.status)"
+              v-if="!searchForm.include_deleted && !isTerminalStatus(row.status)"
               v-permission="'device:update'"
               link
               type="primary"
@@ -145,7 +164,7 @@
               编辑
             </el-button>
             <el-button
-              v-if="!isTerminalStatus(row.status)"
+              v-if="!searchForm.include_deleted && !isTerminalStatus(row.status)"
               v-permission="'device:retire'"
               link
               type="warning"
@@ -154,6 +173,7 @@
               退役
             </el-button>
             <el-button
+              v-if="!searchForm.include_deleted"
               v-permission="'device:delete'"
               link
               type="danger"
@@ -202,7 +222,13 @@ import PermissionButton from '@/components/PermissionButton.vue'
 import ArchiveForm from './ArchiveForm.vue'
 import ArchiveImport from './ArchiveImport.vue'
 import ArchiveDetail from './ArchiveDetail.vue'
-import { deleteDevice, getDevices, getDeviceTypes, retireDevice } from '@/api/device'
+import {
+  deleteDevice,
+  getDevices,
+  getDeviceTypes,
+  restoreDevice,
+  retireDevice,
+} from '@/api/device'
 import { getOrganizationTree } from '@/api/organization'
 import {
   DEVICE_STATUS_OPTIONS,
@@ -232,6 +258,7 @@ const searchForm = reactive({
   status: [],
   brand: '',
   include_retired: false,
+  include_deleted: false,
 })
 const pagination = reactive({ page: 1, page_size: 20, total: 0 })
 
@@ -274,6 +301,7 @@ async function loadDevices() {
       brand: searchForm.brand || undefined,
       status: searchForm.status.length > 0 ? searchForm.status.join(',') : undefined,
       include_retired: searchForm.include_retired,
+      include_deleted: searchForm.include_deleted || undefined,
     })
     const data = res.data || {}
     deviceList.value = data.items || []
@@ -317,6 +345,7 @@ function handleReset() {
   searchForm.status = []
   searchForm.brand = ''
   searchForm.include_retired = false
+  searchForm.include_deleted = false
   handleSearch()
 }
 
@@ -387,6 +416,24 @@ async function handleDelete(row) {
   } catch (err) {
     if (err !== 'cancel' && err !== 'close') {
       ElMessage.error(err.message || '删除失败')
+    }
+  }
+}
+
+/** 回收站：恢复逻辑删除的档案，恢复编码占用 */
+async function handleRestore(row) {
+  try {
+    await ElMessageBox.confirm(
+      `确定恢复设备「${row.device_name}（${row.device_code}）」的档案吗？恢复后该编码重新可用。`,
+      '二次确认',
+      { confirmButtonText: '确定恢复', cancelButtonText: '取消', type: 'warning' }
+    )
+    await restoreDevice(row.id)
+    ElMessage.success('恢复成功')
+    loadDevices()
+  } catch (err) {
+    if (err !== 'cancel' && err !== 'close') {
+      ElMessage.error(err.message || '恢复失败')
     }
   }
 }

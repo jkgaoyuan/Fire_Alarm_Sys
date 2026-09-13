@@ -105,9 +105,18 @@ async def _apply_filters(
     statuses: list[str] | None = None,
     brand: str | None = None,
     include_retired: bool = False,
+    include_deleted: bool = False,
 ) -> Select:
-    """组合筛选（FR-012）。逻辑删除的设备任何情况下都不返回。"""
-    stmt = stmt.where(Device.is_deleted.is_(False))
+    """
+    组合筛选（FR-012）。
+
+    默认不返回逻辑删除的设备；`include_deleted=True` 时改为「只返回已删除」，
+    供归档页回收站视图调用 `/devices/{id}/restore` 恢复档案
+    ——此前后端冲突提示让用户去调一个没有任何 UI 入口的接口。
+    """
+    stmt = stmt.where(
+        Device.is_deleted.is_(True) if include_deleted else Device.is_deleted.is_(False)
+    )
 
     if keyword:
         like = f"%{keyword}%"
@@ -149,6 +158,7 @@ async def list_devices(
     status: str | None = None,
     brand: str | None = None,
     include_retired: bool = False,
+    include_deleted: bool = False,
 ) -> tuple[list[Device], int]:
     """分页查询设备列表，叠加数据权限过滤。返回 (设备列表, 总数)"""
     statuses = parse_status_filter(status)
@@ -165,6 +175,7 @@ async def list_devices(
         statuses=statuses,
         brand=brand,
         include_retired=include_retired,
+        include_deleted=include_deleted,
     )
 
     scoped = await apply_data_scope(base, user, db)

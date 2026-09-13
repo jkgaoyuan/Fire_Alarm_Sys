@@ -96,6 +96,7 @@ async def list_devices_api(
     status: str | None = Query(None, description="状态筛选，多值以逗号分隔"),
     brand: str | None = Query(None),
     include_retired: bool = Query(False),
+    include_deleted: bool = Query(False, description="回收站视图：只返回已逻辑删除的设备"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("device:view")),
 ):
@@ -111,6 +112,7 @@ async def list_devices_api(
         status=status,
         brand=brand,
         include_retired=include_retired,
+        include_deleted=include_deleted,
     )
     return {
         "code": 200,

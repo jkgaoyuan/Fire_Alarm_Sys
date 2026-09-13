@@ -97,6 +97,18 @@ export function deleteDevice(id) {
   })
 }
 
+/**
+ * 恢复已逻辑删除的设备档案（回收站）
+ * 软删除的编码会继续占用，新建/导入撞码时后端提示调用本接口
+ * @param {number} id
+ */
+export function restoreDevice(id) {
+  return request({
+    url: `/devices/${id}/restore`,
+    method: 'post',
+  })
+}
+
 // ========== 设备历史 ==========
 
 /**
