@@ -19,7 +19,11 @@ router = APIRouter(tags=["Linkage Logs"])
 
 @router.get(
     "",
-    summary="查询联动日志列表"
+    summary="查询联动日志列表",
+    # 此前漏了鉴权：未带 token 就能拿到 200 + 数据，而同文件的
+    # `/{log_id}` 与 `/export` 都要求 linkage:view。日志含 alarm_id、
+    # plan_id、target_device_id、result_message，属跨组织可见的业务数据。
+    dependencies=[Depends(require_permission("linkage:view"))]
 )
 async def get_alarm_linkage_logs(
     page: int = Query(1, ge=1),
