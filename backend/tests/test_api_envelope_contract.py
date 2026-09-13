@@ -49,18 +49,14 @@ _RAW_RESPONSE_NAMES = {
 # 迁移中的已知违规：**只许删、不许加**。
 # 三个文件整块没跟上统一信封（其余 15 个文件 119 个端点已 100% 合规）。
 KNOWN_VIOLATIONS = {
-    # linkage_logs.py —— 已于 2026-09-13 迁移完成，白名单清空。
-    # 注：同文件的 export_alarm_linkage_logs 是 PlainTextResponse（CSV 下载），
-    # 属天然豁免，本就不该进白名单——最初误加，被
-    # test_known_violations_are_still_actually_violating 当场拦下。
-    # linkage_plans.py（7）
-    ("linkage_plans.py", "get_linkage_plans"),
-    ("linkage_plans.py", "get_linkage_plan_detail"),
-    ("linkage_plans.py", "create_linkage_plan"),
-    ("linkage_plans.py", "update_linkage_plan"),
-    ("linkage_plans.py", "toggle_linkage_plan_status"),
-    ("linkage_plans.py", "simulate_linkage_trigger"),
-    ("linkage_plans.py", "execute_linkage_plan"),
+    # 迁移日志（原始 20 个）
+    #   2026-09-13  linkage_logs.py  2 个  —— 已清
+    #   2026-09-13  linkage_plans.py 7 个  —— 已清
+    #   待办        repair.py       11 个
+    # 天然豁免、不该进本名单的：linkage_logs 的 CSV 导出（PlainTextResponse）、
+    # linkage_plans 的删除（204 无响应体）——曾误加后者之外的 CSV 那条，
+    # 被 test_known_violations_are_still_actually_violating 当场拦下。
+    #
     # repair.py（11）
     ("repair.py", "list_repair_orders"),
     ("repair.py", "create_repair_order"),

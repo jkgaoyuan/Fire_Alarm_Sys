@@ -71,3 +71,167 @@ async def test_sibling_endpoints_keep_their_auth(client):
     assert (await client.get(f"{LIST_URL}/1")).status_code == 401
     assert (await client.post(f"{LIST_URL}/1/toggle")).status_code == 401
     assert (await client.post(f"{LIST_URL}/execute")).status_code == 401
+
+
+# ==================== 响应信封 ====================
+
+async def _view_user(db_session, name="lp_env"):
+    return await create_user_with_perms(db_session, name, ["linkage:view"])
+
+
+@pytest.mark.asyncio
+async def test_list_returns_envelope(client, db_session):
+    """
+    TC-LP-005: 列表按统一信封返回 `{code, message, data}`。
+
+    不修会怎样：此前返回裸 `LinkagePlanPagination`。前端拦截器对两种形状都
+    放行，组件读 `res.data.items` 拿到 undefined 后被兜底成空表——**不报错**。
+    3.4 当时的选择是改成 `if (res && Array.isArray(res.items))` 去适配违规后端
+    （CLAUDE.md「教训 1」把这个当成了修复），偏离因此一路固化。
+    """
+    user = await _view_user(db_session)
+
+    resp = await client.get(LIST_URL, headers=auth_headers(user))
+    body = resp.json()
+
+    assert resp.status_code == 200
+    assert body["code"] == 200
+    assert body["message"] == "success"
+    assert set(body["data"]) >= {"items", "total", "page", "page_size"}
+    assert "items" not in body, "裸字段又漏到顶层了"
+
+
+@pytest.mark.asyncio
+async def test_detail_not_found_keeps_404(client, db_session):
+    """TC-LP-006: 信封改造不得把「资源不存在」的 404 吞成 200"""
+    user = await _view_user(db_session, "lp_env2")
+
+    resp = await client.get(f"{LIST_URL}/999999", headers=auth_headers(user))
+
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_create_returns_envelope(db_session, client):
+    """TC-LP-007: 创建预案走信封，且内层业务字段落在 data 里"""
+    user = await create_user_with_perms(
+        db_session, "lp_creator", ["linkage:view", "linkage:create"]
+    )
+
+    resp = await client.post(
+        LIST_URL,
+        json={
+            "plan_name": "信封校验预案",
+            "org_id": 1,
+            "fire_type": "fire",
+            "actions": [{"action_type": "start_exhaust", "params": {}}],
+        },
+        headers=auth_headers(user),
+    )
+    body = resp.json()
+
+    assert resp.status_code in (200, 201), resp.text
+    assert body["code"] == 200
+    assert body["data"]["plan_name"] == "信封校验预案"
+    assert "plan_name" not in body, "裸字段又漏到顶层了"
+
+
+@pytest.mark.asyncio
+async def test_execute_requires_plan_id(client, db_session):
+    """
+    TC-LP-009: `/execute` 必须能拿到 plan_id——它此前用了一个 schema 里不存在的字段。
+
+    不修会怎样：端点内部取 `data.plan_id`，而 `LinkageManualExecute` 只有
+    alarm_id / is_simulation / remark，没有 plan_id。**每次调用都抛
+    AttributeError → HTTP 500**，实测报错：
+      {"code":500,"message":"服务器内部错误: 'LinkageManualExecute' object
+       has no attribute 'plan_id'"}
+    该端点因此从未可用；又因为前端 `executeManualLinkage` 没有任何视图调用，
+    这个 100% 失败率一直没被发现。
+
+    这里先钉住「不带 plan_id 时是 422 参数校验失败，而不是 500 内部错误」，
+    把契约固定成 schema 层的显式约束。
+    """
+    user = await create_user_with_perms(
+        db_session, "lp_exec_missing", ["linkage:view", "linkage:execute"]
+    )
+
+    resp = await client.post(
+        f"{LIST_URL}/execute",
+        json={"is_simulation": True},  # 故意不带 plan_id
+        headers=auth_headers(user),
+    )
+
+    assert resp.status_code == 422, (
+        f"缺 plan_id 应是 422 参数校验失败，实际 {resp.status_code}：{resp.text[:200]}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_execute_works_with_plan_id(client, db_session):
+    """TC-LP-009: 带 plan_id 时能正常执行，不再 500"""
+    user = await create_user_with_perms(
+        db_session, "lp_exec_ok", ["linkage:view", "linkage:create", "linkage:execute"]
+    )
+    headers = auth_headers(user)
+
+    created = await client.post(
+        LIST_URL,
+        json={
+            "plan_name": "可执行预案",
+            "org_id": 1,
+            "fire_type": "fire",
+            "actions": [{"action_type": "start_exhaust", "params": {}}],
+        },
+        headers=headers,
+    )
+    plan_id = created.json()["data"]["id"]
+
+    resp = await client.post(
+        f"{LIST_URL}/execute",
+        json={"plan_id": plan_id, "is_simulation": True},
+        headers=headers,
+    )
+
+    assert resp.status_code == 200, f"仍然失败：{resp.text[:300]}"
+    assert resp.json()["data"]["message"].startswith("成功执行")
+
+
+@pytest.mark.asyncio
+async def test_execute_result_is_nested_not_flattened(client, db_session):
+    """
+    TC-LP-008: `/execute` 的返回体里也有一个 `message` 字段，必须收进 data。
+
+    不修会怎样：端点原样返回裸 dict `{message: "成功执行 N 个动作", logs: [...]}`，
+    与外层信封的 `message` 撞名。若简单地把该 dict 摊到信封顶层，
+    「执行了几个动作」这条业务信息就会被信封的 "success" 覆盖掉——
+    调用方永远读不到真实结果。
+    """
+    user = await create_user_with_perms(
+        db_session, "lp_exec", ["linkage:view", "linkage:create", "linkage:execute"]
+    )
+    headers = auth_headers(user)
+
+    created = await client.post(
+        LIST_URL,
+        json={
+            "plan_name": "执行用预案",
+            "org_id": 1,
+            "fire_type": "fire",
+            "actions": [{"action_type": "start_exhaust", "params": {}}],
+        },
+        headers=headers,
+    )
+    plan_id = created.json()["data"]["id"]
+
+    resp = await client.post(
+        f"{LIST_URL}/execute",
+        json={"plan_id": plan_id, "is_simulation": True},
+        headers=headers,
+    )
+    body = resp.json()
+
+    assert resp.status_code == 200, resp.text
+    assert body["message"] == "success"  # 信封自己的 message
+    assert body["data"]["message"].startswith("成功执行")  # 业务 message 在 data 里
+    assert isinstance(body["data"]["logs"], list)

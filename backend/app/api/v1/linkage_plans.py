@@ -16,7 +16,7 @@ from sqlalchemy import select
 from app.core.dependencies import get_db, require_permission, get_current_active_user
 from app.models.linkage import LinkagePlan, AlarmLinkageLog
 from app.models.user import User
-from app.schemas.auth import ResponseModel
+from app.schemas.auth import ResponseModel as Response
 from app.schemas.linkage import (
     LinkagePlanCreate,
     LinkagePlanUpdate,
@@ -25,6 +25,7 @@ from app.schemas.linkage import (
     LinkageManualExecute,
     AlarmLinkageLogOut,
     AlarmLinkageLogPagination,
+    LinkageExecuteResult,
 )
 from app.crud.linkage import linkage_plan_crud, alarm_linkage_log_crud
 from app.services.linkage_engine_service import linkage_engine
@@ -37,7 +38,7 @@ router = APIRouter(tags=["Linkage Plans"])
 
 @router.get(
     "",
-    response_model=LinkagePlanPagination,
+    response_model=Response[LinkagePlanPagination],
     summary="获取预案列表",
     # 此前只有一行 `# TODO: 添加权限验证`，端点实际是敞开的：未带 token
     # 即返回 200 + 预案数据（含 actions 动作配置），而同文件的 `/{plan_id}`
@@ -78,17 +79,21 @@ async def get_linkage_plans(
     
     items = [LinkagePlanOut.model_validate(plan) for plan in results]
     
-    return LinkagePlanPagination(
-        items=items,
-        total=total or 0,
-        page=page,
-        page_size=page_size,
+    return Response(
+        code=200,
+        message="success",
+        data=LinkagePlanPagination(
+            items=items,
+            total=total or 0,
+            page=page,
+            page_size=page_size,
+        ),
     )
 
 
 @router.get(
     "/{plan_id}",
-    response_model=LinkagePlanOut,
+    response_model=Response[LinkagePlanOut],
     summary="获取预案详情",
     dependencies=[Depends(require_permission("linkage:view"))]
 )
@@ -100,12 +105,16 @@ async def get_linkage_plan_detail(plan_id: int, db: AsyncSession = Depends(get_d
             status_code=status.HTTP_404_NOT_FOUND,
             detail="预案不存在"
         )
-    return LinkagePlanOut.model_validate(plan)
+    return Response(
+        code=200,
+        message="success",
+        data=LinkagePlanOut.model_validate(plan),
+    )
 
 
 @router.post(
     "",
-    response_model=LinkagePlanOut,
+    response_model=Response[LinkagePlanOut],
     summary="创建预案",
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_permission("linkage:create"))]
@@ -120,12 +129,16 @@ async def create_linkage_plan(
     db.add(plan)
     await db.commit()
     await db.refresh(plan)
-    return LinkagePlanOut.model_validate(plan)
+    return Response(
+        code=200,
+        message="success",
+        data=LinkagePlanOut.model_validate(plan),
+    )
 
 
 @router.put(
     "/{plan_id}",
-    response_model=LinkagePlanOut,
+    response_model=Response[LinkagePlanOut],
     summary="更新预案",
     dependencies=[Depends(require_permission("linkage:update"))]
 )
@@ -148,7 +161,11 @@ async def update_linkage_plan(
     
     await db.commit()
     await db.refresh(plan)
-    return LinkagePlanOut.model_validate(plan)
+    return Response(
+        code=200,
+        message="success",
+        data=LinkagePlanOut.model_validate(plan),
+    )
 
 
 @router.delete(
@@ -182,7 +199,7 @@ async def delete_linkage_plan(
 
 @router.post(
     "/{plan_id}/toggle",
-    response_model=LinkagePlanOut,
+    response_model=Response[LinkagePlanOut],
     summary="切换预案启用状态",
     dependencies=[Depends(require_permission("linkage:update"))]
 )
@@ -205,12 +222,16 @@ async def toggle_linkage_plan_status(
     await db.commit()
     await db.refresh(plan)
     
-    return LinkagePlanOut.model_validate(plan)
+    return Response(
+        code=200,
+        message="success",
+        data=LinkagePlanOut.model_validate(plan),
+    )
 
 
 @router.post(
     "/{plan_id}/simulate",
-    response_model=AlarmLinkageLogPagination,
+    response_model=Response[AlarmLinkageLogPagination],
     summary="模拟触发预案",
     dependencies=[Depends(require_permission("linkage:simulate"))]
 )
@@ -257,17 +278,21 @@ async def simulate_linkage_trigger(
     
     # 返回结果
     items = [AlarmLinkageLogOut.model_validate(log) for log in logs]
-    return AlarmLinkageLogPagination(
-        items=items,
-        total=len(items),
-        page=1,
-        page_size=len(items),
+    return Response(
+        code=200,
+        message="success",
+        data=AlarmLinkageLogPagination(
+            items=items,
+            total=len(items),
+            page=1,
+            page_size=len(items),
+        ),
     )
 
 
 @router.post(
     "/execute",
-    response_model=dict,
+    response_model=Response[LinkageExecuteResult],
     summary="手动执行预案",
     dependencies=[Depends(require_permission("linkage:execute"))]
 )
@@ -308,7 +333,11 @@ async def execute_linkage_plan(
     
     await db.commit()
     
-    return {
-        "message": f"成功执行 {len(logs)} 个动作",
-        "logs": [AlarmLinkageLogOut.model_validate(log) for log in logs],
-    }
+    return Response(
+        code=200,
+        message="success",
+        data=LinkageExecuteResult(
+            message=f"成功执行 {len(logs)} 个动作",
+            logs=[AlarmLinkageLogOut.model_validate(log) for log in logs],
+        ),
+    )

@@ -196,11 +196,14 @@ async function loadPlans() {
       ...filters,
     }
     const res = await LinkageApi.getLinkagePlans(params)
-    
-    // 注意：这个 API 直接返回数据对象，不是统一的 {code, data} 格式
-    if (res && Array.isArray(res.items)) {
-      plans.value = res.items
-      pagination.total = res.total || 0
+
+    // 后端已统一为响应信封 {code, message, data}（2026-09-13 迁移）。
+    // 这里原先是 `if (res && Array.isArray(res.items))` —— 为了迁就当时
+    // 直接返回裸对象的 /linkage-plans，属于「前端适配违规后端」，
+    // 被 CLAUDE.md 当成「教训 1 的修复」记了下来，偏离因此固化到现在。
+    if (res.code === 200 && res.data) {
+      plans.value = res.data.items || []
+      pagination.total = res.data.total || 0
     } else {
       ElMessage.error(res.message || '获取预案列表失败')
     }

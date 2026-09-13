@@ -135,8 +135,18 @@ class AlarmLinkageLogPagination(BaseModel):
 # ==================== Manual Execute Schema ====================
 
 class LinkageManualExecute(BaseModel):
-    """手动执行预案请求"""
-    
+    """
+    手动执行预案请求。
+
+    `plan_id` 是**必填**：路由是 `/linkage-plans/execute`，以预案为中心，
+    端点内部也一直按 `data.plan_id` 在取——但本 schema 漏了这个字段，
+    导致每次调用都在 `data.plan_id` 上抛 AttributeError → HTTP 500
+    （见 tests/test_linkage_plans_api.py 的 TC-LP-009）。
+    同文件的 `LinkageSimulateTrigger` 早就有 `plan_id`，此处与之对齐。
+    `alarm_id` 仍可空：为空即「独立演练」，不为空则记录是哪条报警触发的。
+    """
+
+    plan_id: int = Field(..., description="预案 ID")
     alarm_id: Optional[int] = Field(None, description="报警 ID，可为空（演练模式）")
     is_simulation: bool = Field(False, description="是否模拟执行")
     remark: Optional[str] = Field(None, description="执行备注")
@@ -144,10 +154,23 @@ class LinkageManualExecute(BaseModel):
 
 class LinkageSimulateTrigger(BaseModel):
     """模拟触发预案请求"""
-    
+
     plan_id: int = Field(..., description="预案 ID")
     is_simulation: bool = Field(True, description="固定为 True")
     remark: Optional[str] = Field(None, description="备注")
+
+
+class LinkageExecuteResult(BaseModel):
+    """
+    手动执行预案的响应体。
+
+    端点此前直接返回裸 dict `{message, logs}`——注意内层那个 `message`
+    会与外层信封的 `message` 撞名，读响应时极易混淆，所以单独建模收进 data。
+    字段名与改造前一致，不影响调用方。
+    """
+
+    message: str
+    logs: list[AlarmLinkageLogOut]
 
 
 # ==================== Action Schema ====================

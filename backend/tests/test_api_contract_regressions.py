@@ -169,7 +169,7 @@ async def test_linkage_toggle_accepts_explicit_state(client, db_session):
         headers=auth_headers(user),
     )
     assert resp.status_code == 200, resp.text
-    assert resp.json()["is_enabled"] is False
+    assert resp.json()["data"]["is_enabled"] is False
 
     # 再显式传 False（而非取反），状态应保持 False
     resp = await client.post(
@@ -178,7 +178,7 @@ async def test_linkage_toggle_accepts_explicit_state(client, db_session):
         headers=auth_headers(user),
     )
     assert resp.status_code == 200
-    assert resp.json()["is_enabled"] is False, "显式设置被当成了取反"
+    assert resp.json()["data"]["is_enabled"] is False, "显式设置被当成了取反"
 
 
 # ==================== 设备回收站 ====================
