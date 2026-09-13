@@ -27,7 +27,17 @@ from datetime import date, datetime
 from typing import List, Optional
 from enum import Enum
 
-from sqlalchemy import DATE, DateTime, ForeignKey, Integer, String, Text, Boolean, Enum as SQLEnum
+from sqlalchemy import (
+    DATE,
+    Boolean,
+    DateTime,
+    Enum as SQLEnum,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -125,9 +135,16 @@ class InspectionTask(Base):
     """
 
     __tablename__ = "inspection_tasks"
+    __table_args__ = (
+        # 同一计划同一天只允许一条任务。本文件顶部的「注意事项」与模型注释一直
+        # 声称有这个约束，但直到 3.6 FR-033 落地前它并不存在——去重全靠
+        # generate_tasks_for_plan 里的 check-then-act，多 worker（WORKERS>1）
+        # 同时启动时会双写。补上后由数据库兜底，service 侧再捕获 IntegrityError。
+        UniqueConstraint("plan_id", "task_date", name="uq_inspection_tasks_plan_date"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    
+
     # 关联字段
     plan_id: Mapped[int] = mapped_column(
         ForeignKey("inspection_plans.id"), index=True, nullable=False

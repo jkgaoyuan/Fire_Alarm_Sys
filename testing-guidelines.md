@@ -177,6 +177,33 @@ cd backend && E2E_BASE_URL=http://localhost:8000/api/v1 python -m pytest -m e2e 
     挂在父节点的数据不可见（与 P1-007 对 devices 的口径一致）。
     另：过滤必须同时作用于 items 与 `total` 用的那条 stmt，否则会出现「总数 2、只回 1 条」。
 
+25. **SQLite 下 `begin_nested()` 的 savepoint 是「假」的，用它写「提交没提交」的断言会得到假绿**。
+    实测（SQLAlchemy 2.0 + aiosqlite，本仓库）：套在 `begin_nested()` 里 `flush` 的行
+    **扛得住后续 `db_session.rollback()`**；不套 savepoint 的才会被丢弃。
+    也就是说 `await db.rollback(); assert 行还在` 这个手法在 SQLite 上**恒为真**，
+    无论生产代码有没有 `commit` —— 它测不出任何东西。
+    正确信号是 **`db_session.in_transaction()`**：返回时若为 `True` 说明事务没结束
+    （＝没提交），`False` 才是提交过。实测提交后 `False`、仅 flush `True`。
+    见 `tests/test_inspection_scheduler.py::test_tasks_are_committed`。
+    ⚠️ 连带影响：**PostgreSQL 与 SQLite 的 savepoint 语义不同**，所以
+    「靠 savepoint 做错误隔离」这类逻辑在本仓库的单测里是**零覆盖**的——
+    别看到 SQLite 全绿就以为生产路径验证过了。
+
+26. **判别 `IntegrityError` 的类别不能只看异常类型，必须看 sqlstate / 文案**。
+    FK 违例与唯一违例**都是** `IntegrityError`。把二者都当成「已存在」吞掉，
+    任务会**静默不生成**——比直接报错难发现得多。
+    Postgres 用 `orig.sqlstate == "23505"`（唯一）/ `"23503"`（外键）；
+    SQLite 没有 sqlstate，回退到文案里的 `unique`。
+    ⚠️ 而 SQLite **默认不启用外键**（`PRAGMA foreign_keys=OFF`），所以 FK 分支在单测里
+    根本触发不到，只能用假异常对象直接覆盖——见
+    `tests/test_inspection_scheduler.py::test_duplicate_error_classifier_covers_postgres_branch`。
+
+27. **后台任务的日志要能实时看到，`print()` 是不够的**。
+    容器 stdout 接到管道时 Python 是**块缓冲**，后台任务打的几行日志会一直攒在缓冲区里，
+    `docker compose logs` 什么都看不到——而「凌晨到底跑没跑」正是这类任务唯一的外部可观测信号。
+    实测：补跑 12 秒后日志已生效但一条都看不到，直到在 `scripts/entrypoint.sh` 里
+    `export PYTHONUNBUFFERED=1` 才出现。写后台任务时顺手确认这一项。
+
 ## 七、缺陷与守护用例的绑定规则
 
 - 每修复一个生产缺陷，**同一提交内必须带守护用例**，并在测试报告第四节记全三列：现象 / 修复 / 守护手段。

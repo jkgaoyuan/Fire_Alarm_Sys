@@ -69,14 +69,22 @@ async def make_plan(
     responsible_user_id: int | None = None,
     cycle_type: str = "daily",
     is_enabled: bool = True,
+    start_date: date | None = None,
+    end_date: date | None = None,
 ) -> InspectionPlan:
-    """建一条巡检计划（绕过 API，直接落库）"""
+    """
+    建一条巡检计划（绕过 API，直接落库）。
+
+    `start_date` 默认今天；传 `end_date` 可限定计划有效期
+    （自动生成会尊重这个窗口，见 `generate_daily_tasks`）。
+    """
     plan = InspectionPlan(
         plan_name=plan_name,
         org_id=org_id,
         responsible_user_id=responsible_user_id,
         cycle_type=cycle_type,
-        start_date=date.today(),
+        start_date=start_date or date.today(),
+        end_date=end_date,
         is_enabled=is_enabled,
     )
     db.add(plan)

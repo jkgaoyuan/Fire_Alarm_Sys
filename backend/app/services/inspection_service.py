@@ -14,7 +14,8 @@
 
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
-from sqlalchemy import false, select
+from sqlalchemy import false, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -32,6 +33,23 @@ from app.models.user import User
 
 
 # ==================== 辅助函数 ====================
+
+def _is_duplicate_task_error(exc: IntegrityError) -> bool:
+    """
+    区分「(plan_id, task_date) 撞唯一约束」与其它完整性错误。
+
+    这个区分是必须的：FK 违例（如计划的责任人已被删除）同样是 IntegrityError，
+    若一并当成「已存在」吞掉，任务会**静默不生成**——比报错更难发现。
+
+    - PostgreSQL/asyncpg：唯一违例 sqlstate 为 23505（FK 违例是 23503）
+    - SQLite/aiosqlite：无 sqlstate，回退到错误文案匹配
+    """
+    orig = getattr(exc, "orig", None)
+    if getattr(orig, "sqlstate", None) == "23505":
+        return True
+    text = str(orig or exc).lower()
+    return "unique" in text or "uq_inspection_tasks_plan_date" in text
+
 
 async def apply_task_data_scope(query, user: User, db: AsyncSession):
     """
@@ -75,6 +93,40 @@ async def apply_task_data_scope(query, user: User, db: AsyncSession):
 
     # self（含未识别的取值，取最小可见权限）
     return query.where(InspectionTask.responsible_user_id == user.id)
+
+
+def is_cycle_due(cycle_type: str, target_date: date) -> bool:
+    """
+    判断某计划在 target_date 这天是否该生成任务（3.6 计划 §3.2「周期类型与任务生成规则」）。
+
+    | cycle_type | 生成规则                        |
+    |------------|---------------------------------|
+    | daily      | 每天 1 条                       |
+    | weekly     | 每周一                          |
+    | monthly    | 每月 1 日                       |
+    | quarterly  | 每季度首月 1 日（1/4/7/10 月 1 日）|
+    | yearly     | 每年 1 月 1 日                  |
+
+    与 `get_next_dates_by_cycle()` 的口径差异是**刻意**的：那个服务手工生成，
+    从 start_date 起按周期步进 N 个日期——用户自己选跨度，可以生成任意日期；
+    这里是定时任务，按自然日历判断「今天该不该生成」，必须守 §3.2。
+    没有这层判断，一个 weekly 计划会被每天建一条任务（7 倍）。
+
+    未知取值一律返回 False 并告警：宁可少生成（可人工补），也不要按日创建垃圾任务。
+    """
+    if cycle_type == InspectionCycleType.daily.value:
+        return True
+    if cycle_type == InspectionCycleType.weekly.value:
+        return target_date.weekday() == 0  # 周一
+    if cycle_type == InspectionCycleType.monthly.value:
+        return target_date.day == 1
+    if cycle_type == InspectionCycleType.quarterly.value:
+        return target_date.month in (1, 4, 7, 10) and target_date.day == 1
+    if cycle_type == InspectionCycleType.yearly.value:
+        return target_date.month == 1 and target_date.day == 1
+
+    print(f"[WARN] 未知的巡检周期 cycle_type={cycle_type!r}，跳过该计划的自动生成")
+    return False
 
 
 def get_next_dates_by_cycle(start_date: date, cycle_type: InspectionCycleType, count: int) -> List[date]:
@@ -197,10 +249,98 @@ async def generate_tasks_for_plan(
         status="pending",
         created_at=datetime.now(),
     )
-    db.add(task)
-    await db.flush()
-    
+    # 用 SAVEPOINT 包住插入：并发下两个请求可能都通过了上面的 check-then-act，
+    # 由 uq_inspection_tasks_plan_date 兜底。**不能直接 `db.rollback()`**——
+    # 那会回滚整个外层事务，把同批已生成的前几个计划一起丢掉。
+    try:
+        async with db.begin_nested():
+            db.add(task)
+            await db.flush()
+    except IntegrityError as exc:
+        if _is_duplicate_task_error(exc):
+            return []
+        raise  # 其它完整性错误（如责任人已被删导致的 FK 违例）交给调用方记录
+
     return [task]
+
+
+async def generate_daily_tasks(db: AsyncSession, target_date: date) -> Dict[str, Any]:
+    """
+    为所有「启用中且有效期覆盖 target_date」的计划生成当日任务（3.6 FR-033）。
+
+    这是每日 00:05 调度的主体逻辑，也是手动补跑/测试的直接入口（不碰循环、不 sleep）。
+
+    与 `/inspection-plans/{id}/generate` 手接口的差别：
+    - 手接口由用户自选日期，**不看计划有效期**；自动生成必须尊重计划窗口，
+      否则会给一个早已结束的计划天天建任务。
+    - 逐计划隔离失败：某个计划出错（如责任人已被删除导致 FK 违例）不影响其它计划。
+
+    Args:
+        db: 数据库会话（调用方持有，便于测试注入）
+        target_date: 要生成的任务日期，**由调用方按业务时区算好传入**
+            （见 app/core/timezone.py）。本函数不自己问「今天几号」。
+
+    Returns:
+        {"date", "plans", "created", "skipped", "failed", "errors"}
+    """
+    stmt = (
+        select(InspectionPlan.id, InspectionPlan.cycle_type)
+        .where(
+            InspectionPlan.is_enabled.is_(True),
+            or_(
+                InspectionPlan.start_date.is_(None),
+                InspectionPlan.start_date <= target_date,
+            ),
+            or_(
+                InspectionPlan.end_date.is_(None),
+                InspectionPlan.end_date >= target_date,
+            ),
+        )
+        .order_by(InspectionPlan.id)
+    )
+    rows = (await db.execute(stmt)).all()
+
+    # 按周期规则筛出「今天该生成」的计划（weekly 只在周一、monthly 只在 1 号…）
+    plan_ids: List[int] = [
+        plan_id
+        for plan_id, cycle_type in rows
+        if is_cycle_due(cycle_type, target_date)
+    ]
+
+    created = skipped = failed = 0
+    errors: List[Dict[str, Any]] = []
+
+    for plan_id in plan_ids:
+        try:
+            # 每个计划一个 SAVEPOINT：单个失败只回滚它自己，不影响同批其它计划，
+            # 也不会污染外层会话（后续查询照常可用）。
+            async with db.begin_nested():
+                tasks = await generate_tasks_for_plan(db, plan_id, target_date)
+        except Exception as exc:  # noqa: BLE001 - 一个计划失败不能拖垮整批
+            failed += 1
+            errors.append({"plan_id": plan_id, "error": f"{type(exc).__name__}: {exc}"})
+            continue
+
+        if tasks:
+            created += len(tasks)
+        else:
+            skipped += 1
+
+    # 统一收口提交。generate_tasks_for_plan 只 flush 不 commit，而 get_db 在
+    # finally 里只 close 不 commit —— 漏掉这一步，整批任务会被静默回滚，
+    # 表现是「接口说生成了 N 条、库里 0 行」（testing-guidelines 第 23 条）。
+    await db.commit()
+
+    return {
+        "date": target_date.isoformat(),
+        "plans": len(plan_ids),
+        "created": created,
+        "skipped": skipped,
+        "failed": failed,
+        # 截断：几百个坏计划不该把返回体和调度器日志刷爆，总数另给
+        "errors": errors[:20],
+        "errors_total": len(errors),
+    }
 
 
 async def scan_missed_tasks(

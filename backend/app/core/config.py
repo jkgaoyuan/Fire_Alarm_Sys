@@ -39,6 +39,16 @@ class Settings(BaseSettings):
     MAX_LOGIN_FAILS: int = 5
     LOCK_DURATION_MINUTES: int = 30
 
+    # 业务时区（3.6 FR-033）
+    # 后端容器默认跑在 UTC，而 PRD 的「每日 00:05 生成当日任务」是 UTC+8 口径。
+    # 只被 app/core/timezone.py 使用，不改容器 TZ（避免存量 naive 时间戳语义漂移）。
+    APP_TIMEZONE: str = "Asia/Shanghai"
+
+    # 设备巡检（3.6 FR-033 / B-3）
+    INSPECTION_SCHEDULER_ENABLED: bool = True  # 关闭后不注册后台任务（本地调试用）
+    INSPECTION_GENERATE_TIME: str = "00:05"  # 业务时区下的 HH:MM（PRD OQ-1）
+    INSPECTION_MISSED_SCAN_INTERVAL_SECONDS: int = 3600
+
     # 实时监控与报警（3.3）
     OFFLINE_THRESHOLD_SECONDS: int = 180  # 超过该时长未上报即判定 offline
     OFFLINE_SCAN_INTERVAL_SECONDS: int = 60

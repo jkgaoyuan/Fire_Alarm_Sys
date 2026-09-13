@@ -4,6 +4,11 @@
 
 set -e
 
+# stdout 接到 docker logs 这类管道时是**块缓冲**，后台任务（巡检调度器、离线监测、
+# 升级扫描）用 print() 打的日志会攒在缓冲区里迟迟不出现——而「凌晨到底跑没跑」
+# 恰恰是这些任务唯一的外部可观测信号。设为行缓冲后实时可见。
+export PYTHONUNBUFFERED=1
+
 DB_HOST="${DB_HOST:-postgres}"
 DB_PORT="${DB_PORT:-5432}"
 DB_USER="${DB_USER:-fire}"

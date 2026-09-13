@@ -23,6 +23,7 @@ from app.db.redis import close_redis_pool, get_redis_pool
 from app.services import ws_broadcaster
 from app.services.emergency_service import EmergencyEscalationTask
 from app.services.map_image_service import map_image_dir
+from app.services import inspection_scheduler
 from app.tasks import offline_monitor
 from app.ws.connection_manager import manager
 
@@ -109,7 +110,11 @@ async def lifespan(app: FastAPI):
     await _ensure_database_schema()
 
     offline_monitor.start()
-    
+
+    # 3.6 B-2/B-3：每日 00:05（业务时区）生成当日巡检任务 + 每小时漏检扫描
+    # 此前 InspectionScheduler 从未接进 lifespan，导致 FR-033 实际未生效
+    inspection_scheduler.start()
+
     # P2-008：eager 启动 WS 扇出消费者，确保多 worker 下每个进程都消费全量消息
     try:
         redis = await get_redis_pool()
@@ -129,6 +134,7 @@ async def lifespan(app: FastAPI):
     
     # 关闭时执行：先停推送扇出与心跳，再释放连接与 Redis
     await offline_monitor.stop()
+    await inspection_scheduler.stop()
     if escalation_task:
         await escalation_task.stop()
     await ws_broadcaster.shutdown()
