@@ -204,8 +204,9 @@ async function loadOrders() {
       start_date: start || undefined,
       end_date: end || undefined,
     })
-    
-    const data = res.data || {}
+
+    // repair.py 直接返回裸数据对象，不是统一 {code, data} 格式
+    const data = res || {}
     orderList.value = data.items || []
     pagination.total = data.total || 0
   } catch (err) {
