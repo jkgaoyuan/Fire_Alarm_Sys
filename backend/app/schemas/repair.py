@@ -100,6 +100,27 @@ class AvgRepairDurationResponse(BaseModel):
     avg_hours: float = Field(..., description="平均维修时长（小时）")
 
 
+class RepairOverviewStatusItem(BaseModel):
+    """工单状态分布项"""
+    status: str = Field(..., description="工单状态")
+    count: int = Field(..., description="该状态工单数")
+
+
+class RepairOverviewResponse(BaseModel):
+    """
+    维修概览统计响应。
+
+    端点此前直接 return 裸 dict，连 response_model 都没有；
+    补上模型后 OpenAPI 才有真实 schema，信封也能按类型校验。
+    """
+
+    avg_repair_hours: float = Field(..., description="平均维修时长（小时）")
+    total_orders: int = Field(..., description="工单总数")
+    status_distribution: List[RepairOverviewStatusItem] = Field(
+        default_factory=list, description="工单状态分布"
+    )
+
+
 class FaultDistributionItem(BaseModel):
     """故障类型分布项"""
     type: str = Field(..., description="设备类型")

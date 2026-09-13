@@ -46,30 +46,20 @@ _RAW_RESPONSE_NAMES = {
     "RedirectResponse",
 }
 
-# 迁移中的已知违规：**只许删、不许加**。
-# 三个文件整块没跟上统一信封（其余 15 个文件 119 个端点已 100% 合规）。
-KNOWN_VIOLATIONS = {
-    # 迁移日志（原始 20 个）
-    #   2026-09-13  linkage_logs.py  2 个  —— 已清
-    #   2026-09-13  linkage_plans.py 7 个  —— 已清
-    #   待办        repair.py       11 个
-    # 天然豁免、不该进本名单的：linkage_logs 的 CSV 导出（PlainTextResponse）、
-    # linkage_plans 的删除（204 无响应体）——曾误加后者之外的 CSV 那条，
-    # 被 test_known_violations_are_still_actually_violating 当场拦下。
-    #
-    # repair.py（11）
-    ("repair.py", "list_repair_orders"),
-    ("repair.py", "create_repair_order"),
-    ("repair.py", "get_repair_order"),
-    ("repair.py", "assign_repair_order"),
-    ("repair.py", "complete_repair_order"),
-    ("repair.py", "accept_repair_order"),
-    ("repair.py", "return_repair_order"),
-    ("repair.py", "get_repair_overview"),
-    ("repair.py", "get_repairer_workload"),
-    ("repair.py", "get_fault_distribution"),
-    ("repair.py", "get_top10_fault_devices"),
-}
+# 迁移历史（仅供追溯，不再是白名单——本文件现已无豁免机制）：
+#   2026-09-13  linkage_logs.py   2 个
+#   2026-09-13  linkage_plans.py  7 个
+#   2026-09-13  repair.py        11 个
+# 原始 20 个违规已全部清零，守卫转为**硬断言**：任何端点返回裸数据即失败。
+# 迁移期间本文件曾维护一份「只许减不许加」的白名单，其中
+# test_known_violations_are_still_actually_violating 当场拦下过一次误加
+# （把天然豁免的 CSV 导出端点写了进去）。名单清空后该机制一并删除，
+# 避免留下两个恒真的空断言。
+#
+# 天然豁免（不写进任何名单，由 _classify 自动识别）：
+#   - 文件/流式下载：FileResponse / StreamingResponse / PlainTextResponse /
+#     HTMLResponse / RedirectResponse，以及 Response(content=/media_type=)
+#   - 204 No Content：按 HTTP 规范无响应体
 
 
 def _is_route(node: ast.AST) -> bool:
@@ -172,7 +162,6 @@ def test_json_endpoints_return_envelope():
         for file, name, lineno, kinds in ROUTES
         if "envelope" not in kinds
         and not kinds <= {"raw-http", "no-body"}
-        and (file, name) not in KNOWN_VIOLATIONS
     ]
 
     assert not offenders, (
@@ -181,29 +170,3 @@ def test_json_endpoints_return_envelope():
         + "\n\n修复方式见 docs/plan/API_RESPONSE_FORMAT_SPECIFICATION.md；"
         "若是文件下载请用 FileResponse/StreamingResponse（天然豁免）。"
     )
-
-
-def test_known_violations_are_still_actually_violating():
-    """
-    白名单只许减不许加：已修好的条目必须及时移出，否则白名单会悄悄腐烂成噪音。
-
-    不修会怎样：某人迁移完某模块却忘了删白名单，守卫从此对该模块视而不见，
-    下次再退化不会有任何提示。
-    """
-    still_bad = {
-        (file, name)
-        for file, name, _, kinds in ROUTES
-        if "envelope" not in kinds and not kinds <= {"raw-http", "no-body"}
-    }
-
-    stale = KNOWN_VIOLATIONS - still_bad
-    assert not stale, (
-        f"以下条目已不再违规，请从 KNOWN_VIOLATIONS 中删除：{sorted(stale)}"
-    )
-
-
-@pytest.mark.parametrize("file,name", sorted(KNOWN_VIOLATIONS))
-def test_known_violation_still_exists(file, name):
-    """白名单里的条目必须真的还存在，避免拼写错误导致守卫空转"""
-    names = {(f, n) for f, n, _, _ in ROUTES}
-    assert (file, name) in names, f"{file}:{name} 在路由里找不到，白名单写错了？"

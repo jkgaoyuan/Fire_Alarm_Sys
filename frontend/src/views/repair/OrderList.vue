@@ -275,8 +275,8 @@ async function loadOrders() {
       end_date: end || undefined,
     })
 
-    // repair.py 直接返回裸数据对象，不是统一 {code, data} 格式
-    const data = res || {}
+    // 后端已统一为响应信封 {code, message, data}（2026-09-13 迁移）
+    const data = res.data || {}
     orderList.value = data.items || []
     pagination.total = data.total || 0
   } catch (err) {

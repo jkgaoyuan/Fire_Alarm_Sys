@@ -63,18 +63,20 @@ async function mountOrderList() {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  // ⚠️ 维修接口返回的是**裸数据对象**，不是统一信封 {code, message, data}：
-  // backend/app/api/v1/repair.py 全部 11 个端点都是 `return RepairOrderXxxResponse(...)`，
-  // 没有 Response[...] 包装层。组件 OrderList.vue 也据此读 `res.items`。
-  // 这里曾把 mock 写成 `{ data: { items } }`，导致组件取到 undefined、表格 0 行，
-  // 5 条依赖行数据的用例全挂——而当时被 localStorage 的环境错误遮住，看不出真因。
+  // 维修接口自 2026-09-13 起因统一信封 {code, message, data}，组件也改回
+  // 读 `res.data.items`。mock 必须与后端真实形状一致——这里曾因为 mock 与
+  // 组件各写各的形状而整片假绿/假红过。
   getRepairOrders.mockResolvedValue({
-    items: [
-      order(1, { status: 'pending' }),
-      order(2, { status: 'repairing', repairer_name: '张三' }),
-      order(3, { status: 'completed' }),
-    ],
-    total: 3,
+    code: 200,
+    message: 'success',
+    data: {
+      items: [
+        order(1, { status: 'pending' }),
+        order(2, { status: 'repairing', repairer_name: '张三' }),
+        order(3, { status: 'completed' }),
+      ],
+      total: 3,
+    },
   })
 })
 
@@ -130,8 +132,12 @@ describe('维修工单列表页（3.7-F1）', () => {
 
   it('T5: 待验收工单显示验收通过和验收退回按钮', async () => {
     getRepairOrders.mockResolvedValue({
-      items: [order(4, { status: 'pending_accept' })],
-      total: 1,
+      code: 200,
+      message: 'success',
+      data: {
+        items: [order(4, { status: 'pending_accept' })],
+        total: 1,
+      },
     })
     const wrapper = await mountOrderList()
 
