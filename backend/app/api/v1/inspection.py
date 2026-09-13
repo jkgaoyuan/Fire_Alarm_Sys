@@ -26,7 +26,7 @@ PRD 章节：3.6 设备巡检
 
 from datetime import date, datetime
 from typing import Optional, List
-from fastapi import APIRouter, Depends, Query, status, HTTPException
+from fastapi import APIRouter, Body, Depends, Query, status, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
@@ -243,7 +243,7 @@ async def delete_inspection_plan(
             detail="已启用的计划无法直接删除，请先停用"
         )
     
-    await inspection_plan_crud.remove(db, plan_id)
+    await inspection_plan_crud.delete(db, id=plan_id)
     return Response(code=200, message="deleted", data=None)
 
 
@@ -255,17 +255,18 @@ async def delete_inspection_plan(
 )
 async def toggle_inspection_plan_status(
     plan_id: int,
-    data: dict,
+    data: dict | None = Body(default=None),
     db: AsyncSession = Depends(get_db)
 ):
-    """切换计划启用状态"""
+    """切换计划启用状态（body 可省略，省略即取反）"""
     plan = await inspection_plan_crud.get(db, plan_id)
     if not plan:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="巡检计划不存在"
         )
-    
+
+    data = data or {}
     plan.is_enabled = data.get("is_enabled", not plan.is_enabled)
     await db.commit()
     await db.refresh(plan)
@@ -280,23 +281,24 @@ async def toggle_inspection_plan_status(
 )
 async def manual_generate_tasks(
     plan_id: int,
-    data: dict,
+    data: dict | None = Body(default=None),
     db: AsyncSession = Depends(get_db)
 ):
-    """为某计划在指定日期生成任务"""
+    """为某计划在指定日期生成任务（body 可省略，days 默认 7）"""
     plan = await inspection_plan_crud.get(db, plan_id)
     if not plan:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="巡检计划不存在"
         )
-    
+
     if not plan.is_enabled:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="该巡检计划已禁用"
         )
-    
+
+    data = data or {}
     target_date_str = data.get("target_date")
     days_count = data.get("days", 7)
     

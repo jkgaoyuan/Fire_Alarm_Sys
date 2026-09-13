@@ -56,11 +56,12 @@ export function toggleInspectionPlanStatus(id, data) {
 }
 
 // 手动生成巡检任务
-export function generateInspectionTasks(id, params) {
+// 注意：后端从 JSON body 读取 target_date / days，走 query 会 422
+export function generateInspectionTasks(id, data) {
   return request({
     url: `/inspection-plans/${id}/generate`,
     method: 'post',
-    params,
+    data,
   })
 }
 

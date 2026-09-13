@@ -67,8 +67,16 @@ PRD: 3.6 FR-032
         style="width: 100%"
       >
         <el-table-column prop="plan_name" label="计划名称" min-width="180" />
-        <el-table-column prop="org_name" label="所属区域" width="160" show-overflow-tooltip />
-        <el-table-column prop="device_type_name" label="设备类型" width="120" />
+        <el-table-column label="所属区域" width="160" show-overflow-tooltip>
+          <template #default="{ row }">
+            {{ getOrgName(row.org_id) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="设备类型" width="120">
+          <template #default="{ row }">
+            {{ getDeviceTypeName(row.device_type_id) }}
+          </template>
+        </el-table-column>
         <el-table-column prop="cycle_type" label="周期类型" width="100">
           <template #default="{ row }">
             <el-tag :type="cycleTypeTag(row.cycle_type)" size="small">
@@ -76,7 +84,11 @@ PRD: 3.6 FR-032
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="responsible_user_name" label="责任人" width="120" />
+        <el-table-column label="责任人" width="120">
+          <template #default="{ row }">
+            {{ getUserName(row.responsible_user_id) }}
+          </template>
+        </el-table-column>
         <el-table-column label="时间范围" width="240">
           <template #default="{ row }">
             {{ formatDate(row.start_date) }} ~ {{ formatDate(row.end_date || '长期') }}
@@ -190,7 +202,13 @@ import PlanForm from './PlanForm.vue'
 import PlanDetail from './PlanDetail.vue'
 import { getOrganizationTree } from '@/api/organization'
 import { getDeviceTypes } from '@/api/device'
-import { getInspectionPlans } from '@/api/inspection'
+import {
+  getInspectionPlans,
+  generateInspectionTasks,
+  toggleInspectionPlanStatus,
+  deleteInspectionPlan,
+} from '@/api/inspection'
+import { getUsers } from '@/api/user'
 
 const cascaderProps = {
   label: 'org_name',
@@ -204,6 +222,7 @@ const loading = ref(false)
 const planList = ref([])
 const orgOptions = ref([])
 const deviceTypes = ref([])
+const users = ref([])
 
 const searchForm = reactive({
   org_id: null,
@@ -221,6 +240,7 @@ onMounted(() => {
   loadPlans()
   loadOrgTree()
   loadDeviceTypes()
+  loadUsers()
 })
 
 // ==================== 数据加载 ====================
@@ -231,8 +251,9 @@ async function loadPlans() {
     const res = await getInspectionPlans({
       page: pagination.page,
       page_size: pagination.page_size,
-      org_id: searchForm.org_id || undefined,
-      is_enabled: searchForm.is_enabled || undefined,
+      // 用 ?? 而非 ||：is_enabled 的「已停用」是 false，|| 会把该筛选条件整个丢掉
+      org_id: searchForm.org_id ?? undefined,
+      is_enabled: searchForm.is_enabled ?? undefined,
     })
     // 兼容统一格式 {code, data: {items, total}} 和裸数据 {items, total}
     const payload = res.data || res || {}
@@ -260,6 +281,15 @@ async function loadDeviceTypes() {
     deviceTypes.value = res.data || []
   } catch (err) {
     ElMessage.error(err.message || '加载设备类型失败')
+  }
+}
+
+async function loadUsers() {
+  try {
+    const res = await getUsers({ page: 1, page_size: 100 })
+    users.value = res.data?.items || []
+  } catch (err) {
+    console.error('加载用户列表失败:', err)
   }
 }
 
@@ -322,6 +352,33 @@ function getProgressColor(rate) {
   return '#F56C6C'
 }
 
+function getOrgName(orgId) {
+  if (!orgId) return '-'
+  function find(nodes) {
+    for (const node of nodes) {
+      if (node.id === orgId) return node.org_name
+      if (node.children?.length) {
+        const found = find(node.children)
+        if (found) return found
+      }
+    }
+    return null
+  }
+  return find(orgOptions.value) || '-'
+}
+
+function getDeviceTypeName(deviceTypeId) {
+  if (!deviceTypeId) return '-'
+  const type = deviceTypes.value.find((t) => t.id === deviceTypeId)
+  return type?.type_name || '-'
+}
+
+function getUserName(userId) {
+  if (!userId) return '-'
+  const user = users.value.find((u) => u.id === userId)
+  return user?.real_name || user?.username || '-'
+}
+
 // ==================== 操作 ====================
 
 function handleAdd() {
@@ -342,18 +399,10 @@ function handleViewDetails(row) {
 async function handleGenerateTasks(row) {
   try {
     const days = 7
-    const response = await window.$axios({
-      method: 'post',
-      url: `/api/v1/inspection-plans/${row.id}/generate`,
-      params: { days },
-    })
-    
-    if (response.code === 200) {
-      ElMessage.success(`已生成 ${days} 天的巡检任务`)
-      loadPlans()
-    } else {
-      ElMessage.error(response.message || '生成任务失败')
-    }
+    // 走 @/api/inspection 封装：request 拦截器已对非 2xx 业务码 reject，成功即 2xx
+    await generateInspectionTasks(row.id, { days })
+    ElMessage.success(`已生成 ${days} 天的巡检任务`)
+    loadPlans()
   } catch (err) {
     ElMessage.error(err.response?.data?.detail || err.message || '生成任务失败')
   }
@@ -362,18 +411,9 @@ async function handleGenerateTasks(row) {
 async function handleToggle(row) {
   try {
     const newStatus = !row.is_enabled
-    const response = await window.$axios({
-      method: 'post',
-      url: `/api/v1/inspection-plans/${row.id}/toggle`,
-      data: { is_enabled: newStatus },
-    })
-    
-    if (response.code === 200) {
-      ElMessage.success(newStatus ? '已启用' : '已停用')
-      loadPlans()
-    } else {
-      ElMessage.error(response.message || '状态更新失败')
-    }
+    await toggleInspectionPlanStatus(row.id, { is_enabled: newStatus })
+    ElMessage.success(newStatus ? '已启用' : '已停用')
+    loadPlans()
   } catch (err) {
     ElMessage.error(err.response?.data?.detail || err.message || '状态更新失败')
   }
@@ -386,19 +426,12 @@ async function handleDelete(row) {
       '二次确认',
       { confirmButtonText: '确定删除', cancelButtonText: '取消', type: 'warning' }
     )
-    
-    const response = await window.$axios({
-      method: 'delete',
-      url: `/api/v1/inspection-plans/${row.id}`,
-    })
-    
-    if (response.code === 200 || response.code === 204 || response.status === 204) {
-      ElMessage.success('删除成功')
-      loadPlans()
-    } else {
-      ElMessage.error(response.message || '删除失败')
-    }
+
+    await deleteInspectionPlan(row.id)
+    ElMessage.success('删除成功')
+    loadPlans()
   } catch (err) {
+    // ElMessageBox 取消时 reject 的是 'cancel' / 'close' 字符串
     if (err !== 'cancel' && err !== 'close') {
       ElMessage.error(err.response?.data?.detail || err.message || '删除失败')
     }

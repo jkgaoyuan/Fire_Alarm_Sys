@@ -371,7 +371,7 @@ class InspectionService:
         if plan.is_enabled:
             raise AuthError(400, "已启用的计划无法直接删除，请先停用")
         
-        await inspection_plan_crud.remove(db, id=plan_id)
+        await inspection_plan_crud.delete(db, id=plan_id)
         return True
     
     @staticmethod

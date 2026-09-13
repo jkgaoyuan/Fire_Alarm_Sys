@@ -160,6 +160,22 @@ const formData = reactive({
   is_enabled: true,
 })
 
+// 同步 plan prop 到表单数据（新增/编辑切换时重置或填充）
+// 必须定义在 formData 之后，否则 immediate 回调会命中 TDZ
+watch(
+  () => props.plan,
+  (val) => {
+    if (val) {
+      Object.assign(formData, val)
+      formData.start_date = val.start_date?.slice(0, 10) || null
+      formData.end_date = val.end_date?.slice(0, 10) || null
+    } else {
+      formRef.value?.resetFields()
+    }
+  },
+  { immediate: true }
+)
+
 const rules = {
   plan_name: [
     { required: true, message: '请输入计划名称', trigger: 'blur' },
@@ -174,15 +190,6 @@ const rules = {
 
 onMounted(() => {
   loadUsers()
-})
-
-defineExpose({
-  setPlan(plan) {
-    // 外部调用时设置计划数据
-    Object.assign(formData, plan)
-    formData.start_date = plan.start_date?.slice(0, 10) || null
-    formData.end_date = plan.end_date?.slice(0, 10) || null
-  },
 })
 
 // ==================== 辅助函数 ====================
