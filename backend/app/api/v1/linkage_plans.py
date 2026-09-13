@@ -38,8 +38,11 @@ router = APIRouter(tags=["Linkage Plans"])
 @router.get(
     "",
     response_model=LinkagePlanPagination,
-    summary="获取预案列表"
-    # TODO: 添加权限验证
+    summary="获取预案列表",
+    # 此前只有一行 `# TODO: 添加权限验证`，端点实际是敞开的：未带 token
+    # 即返回 200 + 预案数据（含 actions 动作配置），而同文件的 `/{plan_id}`
+    # 要求 linkage:view。补上与其兄弟端点一致的权限码。
+    dependencies=[Depends(require_permission("linkage:view"))]
 )
 async def get_linkage_plans(
     page: int = Query(1, ge=1),

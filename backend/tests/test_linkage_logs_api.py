@@ -14,38 +14,16 @@
 
 import pytest
 
-from app.core.security import create_access_token, get_password_hash
-from app.models.permission import Permission
-from app.models.user import Role, User
+from tests.auth_helpers import auth_headers, create_user_with_perms
 
 
-async def make_linkage_user(db_session, username: str, perm_codes: list[str]) -> User:
-    """建一个只持有指定权限码的用户（关联须在 flush 前完成，避免 MissingGreenlet）"""
-    role = Role(role_code=f"{username}_role", role_name=username, is_builtin=False)
-    for code in perm_codes:
-        role.permissions.append(
-            Permission(perm_code=code, perm_name=code, perm_type="api")
-        )
-    db_session.add(role)
-    await db_session.flush()
-
-    user = User(
-        username=username,
-        password_hash=get_password_hash("Test1234"),
-        real_name=username,
-        status="active",
-        data_scope="all",
-    )
-    user.roles.append(role)
-    db_session.add(user)
-    await db_session.commit()
-    await db_session.refresh(user, ["roles"])
-    return user
+async def make_linkage_user(db_session, username: str, perm_codes: list[str]):
+    """建一个只持有指定权限码的用户（通用构造器见 tests/auth_helpers.py）"""
+    return await create_user_with_perms(db_session, username, perm_codes)
 
 
-def headers_for(user: User) -> dict:
-    token = create_access_token(data={"sub": str(user.id), "jti": f"jti-{user.id}"})
-    return {"Authorization": f"Bearer {token}"}
+def headers_for(user) -> dict:
+    return auth_headers(user)
 
 
 # ==================== 鉴权 ====================
