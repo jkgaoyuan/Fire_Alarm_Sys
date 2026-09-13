@@ -87,3 +87,37 @@ async def test_sibling_endpoints_keep_their_auth(client):
     """
     assert (await client.get("/api/v1/alarm-linkage-logs/1")).status_code == 401
     assert (await client.get("/api/v1/alarm-linkage-logs/export")).status_code == 401
+
+
+# ==================== 响应信封 ====================
+
+@pytest.mark.asyncio
+async def test_list_returns_envelope(client, db_session):
+    """
+    TC-LOG-004: 列表按统一信封返回 {code, message, data}。
+
+    不修会怎样：此前返回裸 {items,total,page,page_size}。前端拦截器两种形状
+    都放行，组件按 res.data.items 读会拿到 undefined，被 `|| {}` 兜底后
+    页面显示空表——**不报错**。维修统计页全 0 就是同一类问题。
+    """
+    user = await make_linkage_user(db_session, "lg_view", ["linkage:view"])
+
+    resp = await client.get("/api/v1/alarm-linkage-logs", headers=headers_for(user))
+    body = resp.json()
+
+    assert resp.status_code == 200
+    assert body["code"] == 200
+    assert body["message"] == "success"
+    # 分页字段必须落在 data 里，而不是顶层
+    assert set(body["data"]) >= {"items", "total", "page", "page_size"}
+    assert "items" not in body, "裸字段又漏到顶层了"
+
+
+@pytest.mark.asyncio
+async def test_detail_returns_envelope(client, db_session):
+    """TC-LOG-005: 详情同样走信封；资源不存在时是 404 而非 200 空体"""
+    user = await make_linkage_user(db_session, "lg_view2", ["linkage:view"])
+    headers = headers_for(user)
+
+    resp = await client.get("/api/v1/alarm-linkage-logs/999999", headers=headers)
+    assert resp.status_code == 404

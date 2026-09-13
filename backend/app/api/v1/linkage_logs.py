@@ -12,13 +12,15 @@ from typing import Optional
 from app.core.dependencies import get_db, require_permission
 from app.models.linkage import AlarmLinkageLog
 from app.crud.linkage import alarm_linkage_log_crud
-from app.schemas.linkage import AlarmLinkageLogOut
+from app.schemas.auth import ResponseModel as Response
+from app.schemas.linkage import AlarmLinkageLogOut, AlarmLinkageLogPagination
 
 router = APIRouter(tags=["Linkage Logs"])
 
 
 @router.get(
     "",
+    response_model=Response[AlarmLinkageLogPagination],
     summary="查询联动日志列表",
     # 此前漏了鉴权：未带 token 就能拿到 200 + 数据，而同文件的
     # `/{log_id}` 与 `/export` 都要求 linkage:view。日志含 alarm_id、
@@ -64,12 +66,19 @@ async def get_alarm_linkage_logs(
     
     items = [AlarmLinkageLogOut.model_validate(log) for log in results]
     
-    return {
-        "items": items,
-        "total": total or 0,
-        "page": page,
-        "page_size": page_size,
-    }
+    # 统一响应信封（docs/plan/API_RESPONSE_FORMAT_SPECIFICATION.md）。
+    # 此前直接返回裸 {items,total,...}，前端拦截器对两种形状都放行，
+    # 组件读 res.data 拿到 undefined 后被 `|| {}` 兜底 → 页面显示空而不报错。
+    return Response(
+        code=200,
+        message="success",
+        data=AlarmLinkageLogPagination(
+            items=items,
+            total=total or 0,
+            page=page,
+            page_size=page_size,
+        ),
+    )
 
 
 @router.get(
@@ -129,6 +138,7 @@ async def export_alarm_linkage_logs(
 # 若排在前面会把 "export" 当成 log_id 捕获 → 422 int_parsing。
 @router.get(
     "/{log_id}",
+    response_model=Response[AlarmLinkageLogOut],
     summary="获取日志详情",
     dependencies=[Depends(require_permission("linkage:view"))]
 )
@@ -143,4 +153,8 @@ async def get_alarm_linkage_log_detail(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="日志不存在"
         )
-    return AlarmLinkageLogOut.model_validate(log)
+    return Response(
+        code=200,
+        message="success",
+        data=AlarmLinkageLogOut.model_validate(log),
+    )
