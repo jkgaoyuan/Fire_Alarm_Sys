@@ -26,6 +26,7 @@
 
       <el-form-item label="所属区域" prop="org_id">
         <el-cascader
+          :key="'org-' + orgOptions.length"
           v-model="formData.org_id"
           :options="orgOptions"
           :props="{ label: 'org_name', value: 'id', children: 'children', emitPath: false }"
@@ -36,6 +37,7 @@
 
       <el-form-item label="设备类型" prop="device_type_id">
         <el-select
+          :key="'dt-' + deviceTypes.length"
           v-model="formData.device_type_id"
           placeholder="全部类型（可选）"
           clearable
@@ -102,7 +104,7 @@
     </el-form>
 
     <template #footer>
-      <el-button @click="visible = false">取消</el-button>
+      <el-button @click="handleClose">取消</el-button>
       <el-button type="primary" @click="handleSubmit" :loading="submitLoading">
         确定
       </el-button>
@@ -111,7 +113,7 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, onMounted } from 'vue'
+import { reactive, ref, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { createInspectionPlan, updateInspectionPlan } from '@/api/inspection'
 import { getOrganizationTree } from '@/api/organization'
@@ -137,12 +139,12 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue', 'success'])
 
 const formRef = ref()
+const visible = ref(false)
 const submitLoading = ref(false)
 
-// v-model 同步：把外部 modelValue 双向绑定到弹窗 visible
-const visible = computed({
-  get: () => props.modelValue,
-  set: (val) => emit('update:modelValue', val),
+// 同步外部 v-model 到弹窗 visible
+watch(() => props.modelValue, (val) => {
+  visible.value = val
 })
 
 const users = ref([])
@@ -196,6 +198,7 @@ async function loadUsers() {
 
 function handleClose() {
   visible.value = false
+  emit('update:modelValue', false)
   formRef.value?.resetFields()
 }
 

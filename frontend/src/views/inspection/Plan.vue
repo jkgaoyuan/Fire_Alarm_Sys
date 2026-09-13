@@ -234,9 +234,10 @@ async function loadPlans() {
       org_id: searchForm.org_id || undefined,
       is_enabled: searchForm.is_enabled || undefined,
     })
-    const data = res.data || {}
-    planList.value = data.items || []
-    pagination.total = data.total || 0
+    // 兼容统一格式 {code, data: {items, total}} 和裸数据 {items, total}
+    const payload = res.data || res || {}
+    planList.value = payload.items || []
+    pagination.total = payload.total || 0
   } catch (err) {
     ElMessage.error(err.message || '加载计划列表失败')
   } finally {
