@@ -31,12 +31,29 @@ async def get_user_with_roles(db: AsyncSession, user_id: int) -> User | None:
 
 async def apply_data_scope(query: Select, user: User, db: AsyncSession) -> Select:
     """
-    根据用户 data_scope 追加过滤条件。
-    需要接收 SQLAlchemy Select 对象并返回修改后的 Select。
+    根据用户 data_scope 追加过滤条件（`self` 锚 `created_by`）。
 
     - data_scope='all'   -> 不追加过滤
     - data_scope='dept'  -> 追加 org_id IN (用户部门及所有子部门)
     - data_scope='self'  -> 追加 created_by = user.id
+
+    ⚠️ **别拿它当默认选项。** 截至 2026-09-14 本函数**已无调用方**——
+    它原来是设备域的过滤器，而那正是它的失败之处：`self` 锚 `created_by`
+    只对「记录归属于录入人」的表成立，对**组织资产**（设备）不成立。
+    按 `created_by` 过滤设备的实测后果是维保员在设备档案页看到 0 台、详情 404。
+
+    本仓库现行口径是**每个域自己定义 `self` 锚在哪个字段**：
+
+    | 域 | 口径 | 位置 |
+    |----|------|------|
+    | 设备 | `self` 降级为 `dept`（设备无个人归属字段可锚） | `device_service.apply_device_data_scope` |
+    | 巡检任务 | `self` → `responsible_user_id`（责任人，不是录入人） | `inspection_service.apply_task_data_scope` |
+    | 维修工单 | `self` → 报修/维修/验收/创建 四字段 OR | `repair_service.repair_scope_condition` |
+    | 报警/监控 | `self` 降级为 `dept`（见 DEC-012） | `monitor_service.resolve_visible_org_ids` |
+
+    新域请照此办理，并在 docstring 里写清「锚在哪、为什么」。
+    另外注意本函数的 `hasattr` 守卫：模型缺 `created_by` / `org_id` 时会
+    **静默返回原查询**（不过滤），这在多一层间接调用时很难察觉。
     """
     if user.data_scope == "all":
         return query

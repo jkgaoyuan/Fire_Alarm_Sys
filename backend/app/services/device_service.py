@@ -6,7 +6,7 @@
 
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import false, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.sql import Select
@@ -18,7 +18,7 @@ from app.models.device_type import DeviceType
 from app.models.organization import Organization
 from app.models.user import User
 from app.schemas.device import DeviceCreate, DeviceUpdate
-from app.services.user_service import apply_data_scope
+from app.services.organization_service import resolve_descendant_org_ids
 
 # retired 为终态：不可再通过 PUT 修改，也不可再次退役
 TERMINAL_STATUS = "retired"
@@ -178,7 +178,7 @@ async def list_devices(
         include_deleted=include_deleted,
     )
 
-    scoped = await apply_data_scope(base, user, db)
+    scoped = await apply_device_data_scope(base, user, db)
     # count 复用同一份筛选条件，避免 items 与 total 口径不一致
     count_result = await db.execute(
         select(func.count()).select_from(scoped.subquery())
@@ -189,6 +189,43 @@ async def list_devices(
     items_stmt = scoped.order_by(Device.id.desc()).offset(skip).limit(page_size)
     result = await db.execute(items_stmt)
     return list(result.scalars().all()), total
+
+
+async def apply_device_data_scope(query: Select, user: User, db: AsyncSession) -> Select:
+    """
+    按用户 `data_scope` 追加**设备域**的过滤条件。
+
+    **为什么不复用 `user_service.apply_data_scope`**：那个函数对 `self` 锚的是
+    `devices.created_by` —— 设备的**录入人**。设备是**组织的资产**，不是录入人的私产；
+    「谁录的这份档案」与「谁该看/该修/该管这台设备」没有关系。
+
+    按 `created_by` 过滤的实测后果（2026-09-14）：维保员 `data_scope='self'`，
+    设备由管理员录入 → 设备档案页显示 **0 台**、详情/历史/轨迹一律 404，
+    而设备维保恰恰是这个角色的本职工作——模块对其主要使用者不可用。
+
+    这与本仓库既有的两条口径同源：
+    - **DEC-012**：alarms 域 `self` 降级为 `dept`（「自动上报的报警没有 created_by」）；
+    - `inspection_service.apply_task_data_scope` / `repair_service.repair_scope_condition`：
+      **每个域自己决定 `self` 锚在哪个字段上，锚不住就降级 dept**。
+
+    设备上没有任何「归属到某个人」的字段可锚，因此走降级：
+
+    - `all`  -> 不过滤
+    - `dept` -> 本部门及全部子部门（经 `Device.org_id`）
+    - `self` -> **降级为 `dept`**（含未识别的取值，取最小可见权限仍是 dept 级）
+    """
+    if user.data_scope == "all":
+        return query
+
+    # dept 与 self 同路：self 在设备域没有可锚的字段，降级为 dept
+    if user.org_id is None:
+        # 无部门则不可见任何设备（与 apply_data_scope 的 dept 分支一致）
+        return query.where(false())
+
+    org_ids = await resolve_descendant_org_ids(db, user.org_id)
+    if not org_ids:
+        return query.where(false())
+    return query.where(Device.org_id.in_(org_ids))
 
 
 async def list_devices_by_scope(
@@ -250,7 +287,7 @@ async def _get_device_in_scope(
 ) -> Device | None:
     """按 ID 查询设备并叠加用户数据范围；逻辑删除与越权均视为不存在。"""
     base = select(Device).where(Device.id == device_id, Device.is_deleted.is_(False))
-    scoped = await apply_data_scope(base, user, db)
+    scoped = await apply_device_data_scope(base, user, db)
     stmt = scoped.options(
         selectinload(Device.device_type),
         selectinload(Device.org),
@@ -467,7 +504,7 @@ async def restore_device(
 ) -> Device | None:
     """恢复逻辑删除的设备档案，恢复前校验编码不与未删除档案冲突。"""
     base = select(Device).where(Device.id == device_id, Device.is_deleted.is_(True))
-    scoped = await apply_data_scope(base, user, db)
+    scoped = await apply_device_data_scope(base, user, db)
     stmt = scoped.options(
         selectinload(Device.device_type),
         selectinload(Device.org),

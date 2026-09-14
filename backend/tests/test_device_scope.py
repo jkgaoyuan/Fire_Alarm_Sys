@@ -40,6 +40,12 @@ async def scope_env(db_session):
         username="scope_self",
         perm_codes=ALL_DEVICE_PERMS,
         data_scope="self",
+        # 2026-09-14：设备域的 `self` 已降级为 `dept`（见
+        # device_service.apply_device_data_scope），所以这个账号**必须有部门**，
+        # 否则「本部门」为空集，下面所有断言都会因为「没部门」而通过，
+        # 而不是因为「不在我的范围内」——那样就测不到真正的越权边界了。
+        # 给它另一棵树（外部大楼），使 floor1/floor2 下的设备都落在它范围之外。
+        org=other_building,
     )
     dept_user = await create_device_user(
         db_session,
@@ -108,9 +114,18 @@ async def test_self_user_cannot_mutate_others_device(client, scope_env):
 
 
 @pytest.mark.asyncio
-async def test_self_user_can_access_own_device(client, scope_env):
-    """self 范围用户可正常读写自己创建的设备"""
-    device = await _create_device(client, scope_env, "self_user", scope_env["floor1"], "SCOPE-SELF-OWN")
+async def test_self_user_can_access_devices_in_own_org(client, scope_env):
+    """
+    self 范围用户可读写**本部门**（及子部门）内的设备。
+
+    ⚠️ 原名为 `test_self_user_can_access_own_device`：「自己创建的设备」。
+    2026-09-14 设备域 `self` 降级为 `dept` 后，能读写的依据是**设备在哪个区域**，
+    而不是**谁录的档案**——所以设备落在它自己的区域（外部大楼），
+    且创建人仍是 `self_user`，两种口径下都该可见，断言不偏向任何一种。
+    """
+    device = await _create_device(
+        client, scope_env, "self_user", scope_env["other_building"], "SCOPE-SELF-OWN"
+    )
     headers = auth_headers(scope_env["self_user"])
 
     resp = await client.get(f"/api/v1/devices/{device['id']}", headers=headers)

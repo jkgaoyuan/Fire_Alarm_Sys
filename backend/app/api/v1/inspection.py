@@ -53,7 +53,7 @@ from app.schemas.inspection import (
 )
 from app.crud.inspection import inspection_plan_crud, inspection_task_crud, inspection_record_crud
 from app.services.device_service import list_devices_by_scope
-from app.services.monitor_service import resolve_descendant_org_ids
+from app.services.organization_service import resolve_descendant_org_ids
 from app.services.inspection_service import (
     apply_task_data_scope,
     generate_tasks_for_plan,

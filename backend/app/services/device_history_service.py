@@ -23,7 +23,7 @@ from sqlalchemy.orm import selectinload
 from app.models.alarm import Alarm
 from app.models.device import Device, DeviceStatusLog
 from app.models.user import User
-from app.services.user_service import apply_data_scope
+from app.services.device_service import apply_device_data_scope
 
 # 尚未落地对应模块的数据源（模块上线后逐个移除并补查询分支）
 PENDING_SOURCES: dict[str, str] = {
@@ -134,7 +134,7 @@ async def get_device_history(
 ) -> dict[str, Any] | None:
     """按时间倒序返回设备历史。设备不存在、已逻辑删除或超出数据范围时返回 None。"""
     base = select(Device).where(Device.id == device_id, Device.is_deleted.is_(False))
-    scoped = await apply_data_scope(base, user, db)
+    scoped = await apply_device_data_scope(base, user, db)
     device = (await db.execute(scoped)).scalar_one_or_none()
     if device is None:
         return None
@@ -211,7 +211,7 @@ async def get_device_trajectory(
     设备不存在、已逻辑删除或超出数据范围返回 None。
     """
     base = select(Device).where(Device.id == device_id, Device.is_deleted.is_(False))
-    scoped = await apply_data_scope(base, user, db)
+    scoped = await apply_device_data_scope(base, user, db)
     device = (await db.execute(scoped)).scalar_one_or_none()
     if device is None:
         return None

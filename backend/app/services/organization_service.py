@@ -12,6 +12,24 @@ from app.core.exceptions import AuthError
 from app.models.organization import Organization
 
 
+async def resolve_descendant_org_ids(db: AsyncSession, org_id: int) -> list[int]:
+    """
+    递归取 org_id 及其全部后代区域 id（含自身）。
+
+    原先定义在 `monitor_service.py`，但它的调用方早已跨域（巡检、设备都要用），
+    放在监控域会让别的域 import 一个语义上不属于那里的函数。仓库里这段递归 CTE
+    目前有五份各自内联的副本（`core/dependencies.py`、`inspection_service`、
+    `monitor_service`、`repair_service`、`statistics_service`、`user_service`），
+    **新代码一律用本函数**，不要再抄第六份。
+    """
+    cte = select(Organization.id).where(Organization.id == org_id).cte(recursive=True)
+    cte = cte.union_all(
+        select(Organization.id).where(Organization.parent_id == cte.c.id)
+    )
+    result = await db.execute(select(cte.c.id))
+    return [row[0] for row in result.all()]
+
+
 async def get_organizations_flat(db: AsyncSession) -> list[Organization]:
     """按 sort_order 返回全部组织节点"""
     result = await db.execute(

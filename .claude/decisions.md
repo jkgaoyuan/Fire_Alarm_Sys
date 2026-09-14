@@ -198,6 +198,18 @@
 - **来源会话**: 2026-09-13 21:15
 - **回滚条件**: 若需允许同计划同日多任务（如一天多轮巡检），删除该约束与 `_is_duplicate_task_error` 判断
 
+## DEC-021：设备域的 `data_scope='self'` 降级为 `dept`
+
+- **决策**: 新增 `device_service.apply_device_data_scope`，`self` 按 `dept` 处理（本部门及全部子部门）。设备的列表、详情、历史、轨迹、回收站恢复全部改走该函数，**不再复用 `user_service.apply_data_scope`**（后者如今已无任何调用方，docstring 已改写为警示）。
+- **原因**:
+  1. 通用函数把 `self` 锚在 `devices.created_by` —— 设备的**录入人**。设备是**组织的资产**，不是录入人的私产；「谁录的档案」与「谁该看/该修/该管这台设备」无关。
+  2. 实测后果（2026-09-14）：维保员 `data_scope='self'`、设备由管理员录入 → 设备档案页 **0 台**、详情/历史/轨迹一律 404（envelope `code=404`，HTTP 200）。而设备维保正是该角色的本职工作 —— 模块对其主要使用者不可用。
+  3. 这与既有两条口径同源：**DEC-012**（alarms 的 `self` 降级为 `dept`，「自动上报的报警没有 created_by」）、`apply_task_data_scope`（任务锚 `responsible_user_id`）、`repair_service.repair_scope_condition`（工单锚报修/维修/验收/创建四字段）。**每个域自己决定 `self` 锚在哪，锚不住就降级 dept**；设备域是最后一个还在套通用函数的。
+- **被否的备选**: 改维保员的 `data_scope` 为 `dept`（对上 `3.6-设备巡检 - 权限测试用例补充.md` TC-PERM-004 的「maintainer=dept」）。否决理由：`data_scope` 是**用户级**属性，改它会连带把该用户的**任务**可见性从「责任人是我的」变成「本部门任务」（与 `3.6-设备巡检-开发计划.md:278` 冲突），**维修工单**从「我报的/我修的/我验收的/我建的」变成「本部门设备的全部工单」（实测 6 条 → 8 条，多出两条与该用户无关）。范围口径应就地修在域内，而不是外溢到别的域。
+- **影响范围**: `backend/app/services/device_service.py`、`device_history_service.py`、`organization_service.py`（`resolve_descendant_org_ids` 由 `monitor_service` 迁入）、`user_service.py`（docstring 警示）、`tests/test_device_permission.py`、`tests/test_device_scope.py`、`docs/plan/3.2-消防设备档案-开发计划.md`（技术要点第 1 条）
+- **来源会话**: 2026-09-14
+- **回滚条件**: 若将来给设备加上「归属人」字段（如 `responsible_user_id`），可把 `self` 锚到该字段，与任务域口径对齐；届时本降级即可撤销
+
 ---
 
 ## 未编号的计划调整（非 ADR，仅备查）

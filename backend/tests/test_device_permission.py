@@ -96,13 +96,76 @@ async def test_data_scope_dept_limits_to_subtree(client, scope_env):
 
 
 @pytest.mark.asyncio
-async def test_data_scope_self_limits_to_creator(client, scope_env):
-    """self：即便同区域，也只能看到自己建档的设备"""
+async def test_data_scope_self_falls_back_to_dept(client, scope_env):
+    """
+    self：设备域**降级为 dept** —— 本部门及子部门，不再按建档人过滤。
+
+    ⚠️ 本条断言在 2026-09-14 被**有意改写**（原名
+    `test_data_scope_self_limits_to_creator`，断言「self 即便同区域也只能看到
+    自己建档的设备」）。原因见 `device_service.apply_device_data_scope`：
+    设备是**组织的资产**，不是录入人的私产，`created_by` 是「谁录的档案」，
+    与「谁该看/该修这台设备」无关。按建档人过滤的实测后果是维保员
+    （`data_scope='self'`）设备档案页 **0 台**、详情/历史/轨迹全 404，
+    而设备维保恰是他的本职。
+
+    改写后仍然钉住「self 不是不受限」：同部门内的**他人建档**设备可见了，
+    但**别的部门**的设备依然不可见。
+    """
     env = scope_env
     await _add(client, env, env["chief"], "DEV-BY-CHIEF", env["building_b"])
     await _add(client, env, env["self_user"], "DEV-BY-SELF", env["building_b"])
+    # 另一个部门（A 栋）的设备：不得因为 self 降级而漏出去
+    await _add(client, env, env["chief"], "DEV-A1", env["building_a"])
 
-    assert await _codes(client, auth_headers(env["self_user"])) == {"DEV-BY-SELF"}
+    assert await _codes(client, auth_headers(env["self_user"])) == {
+        "DEV-BY-CHIEF",
+        "DEV-BY-SELF",
+    }
+
+
+@pytest.mark.asyncio
+async def test_self_scope_can_open_device_detail(client, db_session, scope_env):
+    """
+    self 用户必须能打开**本部门内他人建档**设备的详情。
+
+    列表可见但详情 404 是最难察觉的一种不一致：界面上能看到这一行，
+    点进去说「设备不存在」。列表与详情用的是同一个口径函数，
+    这里把「两处一起改」钉住。
+    """
+    env = scope_env
+    device_id = await _add(client, env, env["chief"], "DEV-BY-CHIEF", env["building_b"])
+    headers = auth_headers(env["self_user"])
+
+    resp = await client.get(f"/api/v1/devices/{device_id}", headers=headers)
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["code"] == 200, resp.json()
+
+
+@pytest.mark.asyncio
+async def test_user_without_org_sees_nothing(client, db_session, scope_env):
+    """
+    未分配部门的 self/dept 用户：**看不到任何设备**，而不是看到全部。
+
+    `users.org_id` 可空，所以这是真实可达的配置。设备范围是「本部门及子部门」，
+    没有部门就是空集 —— 一旦这里漏成「不过滤」，一个连部门都没配的账号
+    就能读到全公司的设备档案。
+
+    这条钉住的是**行为**，不是某一行实现：`apply_device_data_scope` 里
+    「org_id 为空」与「子树为空」是两道**冗余**保险，实测单独删掉任意一道
+    本用例都不会红（另一道仍然兜住）。这是刻意的纵深防御，不是覆盖缺口。
+    """
+    env = scope_env
+    await _add(client, env, env["chief"], "DEV-A1", env["building_a"])
+    orphan = await create_device_user(
+        db_session,
+        username="no_org",
+        perm_codes=["device:view"],
+        data_scope="self",
+    )
+    assert orphan.org_id is None, "用例前提：该账号没有部门"
+
+    assert await _codes(client, auth_headers(orphan)) == set()
 
 
 @pytest.mark.asyncio

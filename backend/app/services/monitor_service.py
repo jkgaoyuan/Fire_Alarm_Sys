@@ -20,21 +20,14 @@ from app.models.device import Device
 from app.models.organization import Organization
 from app.models.user import User
 from app.schemas.alarm import DashboardOut, MapDevicesOut, MapDeviceOut, MapMetaOut
+# 组织子树递归原先定义在本模块，已移到 organization_service（调用方早已跨域）。
+# 这里保留 import 是为了不改变本模块的既有调用点语义。
+from app.services.organization_service import resolve_descendant_org_ids
 
 # 视口点位上限，超限改为网格聚合返回（FR-015 性能优化）
 MAP_RENDER_LIMIT = 500
 # 网格聚合的分桶数（视口 10x10）
 GRID_BUCKETS = 10
-
-
-async def resolve_descendant_org_ids(db: AsyncSession, org_id: int) -> list[int]:
-    """递归取 org_id 及其全部后代区域 id（含自身）"""
-    cte = select(Organization.id).where(Organization.id == org_id).cte(recursive=True)
-    cte = cte.union_all(
-        select(Organization.id).where(Organization.parent_id == cte.c.id)
-    )
-    result = await db.execute(select(cte.c.id))
-    return [row[0] for row in result.all()]
 
 
 async def resolve_visible_org_ids(db: AsyncSession, user: User) -> set[int] | None:
