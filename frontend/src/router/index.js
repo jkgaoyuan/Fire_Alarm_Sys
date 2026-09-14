@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { getToken } from '@/utils/auth'
+import { useAuthStore } from '@/stores/auth'
 import { usePermissionStore } from '@/stores/permission'
 import { staticRoutes } from './staticRoutes'
 
@@ -15,7 +16,14 @@ async function initializeRoutes() {
   if (permStore.isRoutesLoaded) return
 
   if (!initPromise) {
-    initPromise = permStore.generateRoutes().finally(() => {
+    initPromise = (async () => {
+      // 刷新后 accessToken 会从 localStorage 恢复，但 userInfo 是纯内存状态。
+      // 必须先重新拉取当前用户，否则顶部栏只能渲染兜底文案「用户」。
+      // 顺序放在生成路由之前：一旦它失败，isRoutesLoaded 仍是 false，
+      // 后续导航可以整体重试，不会卡在「路由已就绪但用户信息为空」的半初始化态。
+      await useAuthStore().fetchUserInfo()
+      await permStore.generateRoutes()
+    })().finally(() => {
       initPromise = null
     })
   }

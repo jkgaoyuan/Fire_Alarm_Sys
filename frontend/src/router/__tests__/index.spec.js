@@ -11,11 +11,15 @@ vi.mock('@/api/user', () => ({
   getPermissions: vi.fn(),
 }))
 
-const { mockLogout } = vi.hoisted(() => ({ mockLogout: vi.fn().mockResolvedValue() }))
+const { mockLogout, mockFetchUserInfo } = vi.hoisted(() => ({
+  mockLogout: vi.fn().mockResolvedValue(),
+  mockFetchUserInfo: vi.fn().mockResolvedValue({ username: 'admin', real_name: '管理员' }),
+}))
 
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({
     logout: mockLogout,
+    fetchUserInfo: mockFetchUserInfo,
   }),
 }))
 vi.mock('@/router/staticRoutes', () => ({
@@ -103,6 +107,8 @@ describe('router guard', () => {
     vi.clearAllMocks()
     getMenus.mockReset()
     getPermissions.mockReset()
+    mockFetchUserInfo.mockReset()
+    mockFetchUserInfo.mockResolvedValue({ username: 'admin', real_name: '管理员' })
     vi.spyOn(console, 'error').mockImplementation(() => {})
     resetRouter()
     // Prevent guard from triggering route initialization during login reset
@@ -306,5 +312,74 @@ describe('router guard', () => {
     await router.push('/')
     // Home redirects to /monitor/dashboard; permission check should allow it
     expect(router.currentRoute.value.path).toBe('/monitor/dashboard')
+  })
+})
+
+/**
+ * 刷新页面后 accessToken 会从 localStorage 恢复，但 userInfo 是纯内存状态。
+ * 若初始化时不重新拉取当前用户，AppHeader 只能渲染兜底文案「用户」。
+ */
+describe('初始化时加载当前用户信息', () => {
+  beforeEach(async () => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    getMenus.mockReset()
+    getPermissions.mockReset()
+    mockFetchUserInfo.mockReset()
+    mockFetchUserInfo.mockResolvedValue({ username: 'admin', real_name: '管理员' })
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    resetRouter()
+    getToken.mockReturnValue(null)
+    await router.replace('/login')
+  })
+
+  afterEach(() => vi.restoreAllMocks())
+
+  it('路由初始化时应拉取当前用户信息（刷新后不再回退到「用户」）', async () => {
+    getToken.mockReturnValue('valid-token')
+    getMenus.mockResolvedValue({ data: [dashboardMenu] })
+    getPermissions.mockResolvedValue({ data: ['monitor:dashboard'] })
+
+    await router.replace('/monitor/dashboard')
+
+    expect(mockFetchUserInfo).toHaveBeenCalledOnce()
+    expect(router.currentRoute.value.path).toBe('/monitor/dashboard')
+  })
+
+  it('应在用户信息返回后才放行导航，避免头部先渲染兜底文案', async () => {
+    getToken.mockReturnValue('valid-token')
+    getMenus.mockResolvedValue({ data: [dashboardMenu] })
+    getPermissions.mockResolvedValue({ data: ['monitor:dashboard'] })
+    const profile = deferred()
+    mockFetchUserInfo.mockReturnValue(profile.promise)
+
+    let finished = false
+    const navigation = router.replace('/monitor/dashboard').then(() => { finished = true })
+    await vi.waitFor(() => expect(mockFetchUserInfo).toHaveBeenCalledOnce())
+    const whileProfilePending = { path: router.currentRoute.value.path, finished }
+
+    profile.resolve({ username: 'admin', real_name: '管理员' })
+    await navigation
+
+    expect(whileProfilePending).toEqual({ path: '/login', finished: false })
+    expect(router.currentRoute.value.path).toBe('/monitor/dashboard')
+  })
+
+  it('用户信息拉取失败时不得标记初始化完成，以便重试', async () => {
+    getToken.mockReturnValue('valid-token')
+    getMenus.mockResolvedValue({ data: [dashboardMenu] })
+    getPermissions.mockResolvedValue({ data: ['monitor:dashboard'] })
+    const failure = new Error('profile service unavailable')
+    mockFetchUserInfo.mockRejectedValueOnce(failure)
+
+    const result = await router.replace('/monitor/dashboard').then(() => null, (error) => error)
+
+    expect(result).toBe(failure)
+    expect(usePermissionStore().isRoutesLoaded).toBe(false)
+
+    // 重试应能成功进入，且用户信息已就位
+    await router.replace('/monitor/dashboard')
+    expect(router.currentRoute.value.path).toBe('/monitor/dashboard')
+    expect(mockFetchUserInfo).toHaveBeenCalledTimes(2)
   })
 })
