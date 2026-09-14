@@ -78,11 +78,15 @@ async def execute_export_sync(
         task.file_path = file_path
         task.file_name = file_name
         task.completed_at = datetime.utcnow()
-        await db.flush()
     except Exception as e:
         task.status = "failed"
         task.error_message = str(e)
-        await db.flush()
+
+    # ⚠️ 必须 commit（本仓库约定：由 service 层提交，见其他 service）。
+    # `get_db` 不自动提交，且在 finally 里 close() 会话 —— 只 flush 的后果是
+    # **接口返回 task_id、文件也已写进磁盘，而库里 0 行**（事务被回滚），
+    # 导出中心因此永远查不到任何任务。实测：接口返回 task_id=19，库里 0 行。
+    await db.commit()
 
     return task
 
@@ -104,14 +108,22 @@ async def execute_export_async(
         _background_export, task.id, data, file_format
     )
 
+    # ⚠️ 同上：必须在返回前提交。`_background_export` 用的是**独立 session**，
+    # 靠 `db.get(ReportExportTask, task_id)` 取回本行；不提交的话它拿到 None
+    # 直接 return，任务永久停在 running 而用户看不到任何错误。
+    await db.commit()
+
     return task
 
 
 async def _background_export(task_id: int, data: list, file_format: str):
     """后台导出任务（独立 session）"""
-    from app.db.session import async_session_maker
+    # ⚠️ 符号名是 AsyncSessionLocal。这里此前写的是 `async_session_maker`——
+    # 该名字在 app/db/session.py 中并不存在，导致后台导出**第一行就 ImportError**，
+    # 异常被后台任务机制吞掉、任务永久停在 running（>1 万行导出 100% 死路）。
+    from app.db.session import AsyncSessionLocal
 
-    async with async_session_maker() as db:
+    async with AsyncSessionLocal() as db:
         task = await db.get(ReportExportTask, task_id)
         if not task:
             return
