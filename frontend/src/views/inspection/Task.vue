@@ -151,10 +151,11 @@
       :task-id="currentTaskId"
     />
 
-    <!-- 统计信息弹窗 -->
+    <!-- 统计信息弹窗：直接传整行数据（任务日期/计划/周期/状态/责任人/已记录数
+         都已在行里），不必为这些字段再请求一次后端 -->
     <StatsDialog
       v-model="statsVisible"
-      :task-id="currentTaskId"
+      :task="currentTask"
     />
   </div>
 </template>
@@ -186,6 +187,8 @@ const execVisible = ref(false)
 const viewVisible = ref(false)
 const statsVisible = ref(false)
 const currentTaskId = ref(null)
+// 统计弹窗要的是整行（不是只有 id），见 handleShowStats
+const currentTask = ref(null)
 
 onMounted(() => {
   loadTasks()
@@ -311,7 +314,7 @@ function handleViewRecords(row) {
 }
 
 function handleShowStats(row) {
-  currentTaskId.value = row.id
+  currentTask.value = row
   statsVisible.value = true
 }
 </script>

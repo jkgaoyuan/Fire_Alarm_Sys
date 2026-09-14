@@ -344,6 +344,7 @@ async def get_inspection_tasks(
     end_date: Optional[date] = None,
     status: Optional[str] = None,
     responsible_user_id: Optional[int] = None,
+    plan_id: Optional[int] = None,
     user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -364,6 +365,10 @@ async def get_inspection_tasks(
         stmt = stmt.where(InspectionTask.status == status)
     if responsible_user_id:
         stmt = stmt.where(InspectionTask.responsible_user_id == responsible_user_id)
+    if plan_id:
+        # 计划详情弹窗的「任务列表」要的就是该计划的任务。此前没有这个参数，
+        # 前端只能不传 → 计划 A 的详情里列出**全量任务**。
+        stmt = stmt.where(InspectionTask.plan_id == plan_id)
 
     # 数据范围（3.6 计划第 278 行）：任务表没有 created_by / org_id，
     # 不能复用 user_service.apply_data_scope，见该函数注释
@@ -534,19 +539,36 @@ async def get_inspection_records(
     skip = (page - 1) * page_size
     today = date.today()
     
-    # 默认范围：本月
-    effective_start = start_date or (today.replace(day=1))
-    effective_end = end_date or today
-    
     # 用 _record_query() 而不是裸 select：响应要 device_code/device_name 与
     # inspected_by_name，这三个都取自 device / inspector 关系（见 _record_out）。
-    stmt = _record_query().where(
-        InspectionRecord.inspected_at >= datetime.combine(effective_start, datetime.min.time()),
-        InspectionRecord.inspected_at <= datetime.combine(effective_end, datetime.max.time()),
-    )
-    
+    stmt = _record_query()
+
+    # ⚠️ 日期窗口按「有没有点名 task_id」分两种口径。
+    # 指定了 task_id 就**不套隐式「本月」窗口**：既然要的就是某个任务的记录，
+    # 再按 inspected_at 收窄到本月毫无道理，只会静默返回空表——前端「查看记录」
+    # 不传日期，于是查上个月的任务永远显示 0 行，而同一行的「已记录数」写着 3。
+    # （2026-09-14 实测缺陷。）显式传进来的 start_date / end_date 仍然照常生效。
     if task_id:
         stmt = stmt.where(InspectionRecord.task_id == task_id)
+        if start_date:
+            stmt = stmt.where(
+                InspectionRecord.inspected_at
+                >= datetime.combine(start_date, datetime.min.time())
+            )
+        if end_date:
+            stmt = stmt.where(
+                InspectionRecord.inspected_at
+                <= datetime.combine(end_date, datetime.max.time())
+            )
+    else:
+        # 不指定任务时保留「本月」默认，避免列表接口全表扫描
+        effective_start = start_date or (today.replace(day=1))
+        effective_end = end_date or today
+        stmt = stmt.where(
+            InspectionRecord.inspected_at >= datetime.combine(effective_start, datetime.min.time()),
+            InspectionRecord.inspected_at <= datetime.combine(effective_end, datetime.max.time()),
+        )
+
     if device_id:
         stmt = stmt.where(InspectionRecord.device_id == device_id)
     if result:

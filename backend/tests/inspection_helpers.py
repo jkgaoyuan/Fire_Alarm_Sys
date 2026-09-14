@@ -98,12 +98,16 @@ async def make_record(
     inspected_by: int | None = None,
     result: str = "normal",
     abnormal_desc: str | None = None,
+    inspected_at=None,
 ):
     """
     建一条巡检记录（绕过 API，直接落库）。
 
     用途：把「读接口」的用例与「写接口」解耦——否则列表用例要先调提交接口，
     提交一坏它就跟着坏，无法区分是哪一端的问题。
+
+    `inspected_at` 默认取当下；传值可构造跨月/跨日的记录
+    （列表接口对 `inspected_at` 有日期窗口，用例必须能挪动它）。
     """
     from datetime import datetime
 
@@ -117,7 +121,7 @@ async def make_record(
         result=result,
         abnormal_desc=abnormal_desc,
         photos=[],
-        inspected_at=datetime.now(),
+        inspected_at=inspected_at or datetime.now(),
     )
     db.add(record)
     await db.commit()

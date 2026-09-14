@@ -24,7 +24,7 @@
 另有一处**静默**问题：`inspected_by_name` 是 Optional，`model_validate` 取不到时
 不报错、直接给 `None`——页面显示空白而没有任何提示。本文件一并钉住。
 """
-from datetime import date
+from datetime import date, datetime, time, timedelta
 
 import pytest
 import pytest_asyncio
@@ -289,3 +289,79 @@ async def test_submit_abnormal_record_links_repair_order(client, db_session, rec
     ).scalar_one_or_none()
     assert order is not None, "异常巡检没有自动建维修工单"
     assert order.inspection_record_id == record_id
+
+
+# ==================== 弹窗数据口径（2026-09-14） ====================
+#
+# 下面两条对应「三个弹窗打不开」修复时一并查出的数据口径缺陷：
+# 弹窗修好之后，打开看到的是**错误的数据**——比打不开更容易被当成真的。
+
+@pytest.mark.asyncio
+async def test_task_list_filters_by_plan_id(client, db_session, rec_env):
+    """
+    TC-INS-REC-008: 传 `plan_id` 时只返回该计划的任务。
+
+    不修会怎样：计划详情弹窗的「任务列表」调 `getInspectionTasks` 时不带 plan_id
+    （后端当时也不支持该参数），于是**计划 A 的详情里列出的是全量任务**，
+    分页 total 也是全局总数。用户无从察觉自己看的是别的计划的任务。
+    """
+    e = rec_env
+    headers = auth_headers(e["user"])
+
+    other_plan = await make_plan(
+        db_session,
+        plan_name="每周巡检-其他楼",
+        org_id=e["org"].id,
+        responsible_user_id=e["user"].id,
+    )
+    other_task = await make_task(
+        db_session, plan_id=other_plan.id, responsible_user_id=e["user"].id
+    )
+
+    resp = await client.get(
+        TASKS_URL, params={"plan_id": e["plan"].id}, headers=headers
+    )
+    ids = {i["id"] for i in resp.json()["data"]["items"]}
+    assert e["task"].id in ids
+    assert other_task.id not in ids, "计划 A 的详情里混进了别的计划的任务"
+
+
+    # 不带 plan_id 时两条都应出现——证明上面过滤真的生效，
+    # 而不是「库里本来就只有一条」造成的假绿
+    resp = await client.get(TASKS_URL, headers=headers)
+    all_ids = {i["id"] for i in resp.json()["data"]["items"]}
+    assert {e["task"].id, other_task.id} <= all_ids
+
+
+@pytest.mark.asyncio
+async def test_records_for_named_task_ignore_default_month_window(client, db_session, rec_env):
+    """
+    TC-INS-REC-009: 点名 `task_id` 时不得再套「本月」隐式窗口。
+
+    不修会怎样：记录端点按 `inspected_at` 过滤到「本月1日 ~ 今天」。
+    前端「查看记录」不传日期，于是查**上个月**的任务时永远显示 0 行——
+    而任务列表同一行的「已记录数」明明白白写着 3。**静默返回空表，不报错。**
+    """
+    e = rec_env
+    last_month_day = date.today().replace(day=1) - timedelta(days=1)
+    old = await make_record(
+        db_session,
+        task_id=e["task"].id,
+        device_id=e["device"].id,
+        inspected_by=e["user"].id,
+        inspected_at=datetime.combine(last_month_day, time(10, 0)),
+    )
+    headers = auth_headers(e["user"])
+
+    resp = await client.get(
+        RECORDS_URL, params={"task_id": e["task"].id}, headers=headers
+    )
+    ids = [i["id"] for i in resp.json()["data"]["items"]]
+    assert old.id in ids, "上个月的记录被隐式「本月」窗口吞掉了"
+
+    # 不指定 task_id 时「本月」默认窗口仍然生效——这是列表接口的既有设计，
+    # 本次只放开「点名某个任务」这一条路径，不要把默认行为一起改掉
+    resp = await client.get(RECORDS_URL, headers=headers)
+    assert old.id not in {i["id"] for i in resp.json()["data"]["items"]}, (
+        "列表接口的「本月」默认窗口被改掉了，本用例只想放开指定 task_id 的路径"
+    )

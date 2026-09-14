@@ -104,6 +104,49 @@ export function overlayStub() {
 }
 
 /**
+ * 带可见性语义的 el-dialog 替身 —— 与 overlayStub 的关键区别是它**真的按
+ * modelValue 决定内容是否渲染**（`v-if`），而 overlayStub 无条件渲染全部内容。
+ *
+ * 为什么必须单独有一个：overlayStub 会把「弹窗压根打不开」这个缺陷藏起来——
+ * 组件把 `modelValue=false` 传下去，内容照样在 DOM 里，断言「能查到内容」永远为真。
+ * 本仓 2026-09-14 就栽在这上面：三个弹窗组件把 `v-model` 绑在各自的局部
+ * `ref(false)` 上、从不读 props.modelValue，而 Plan.spec.js 用 `PlanDetail: true`
+ * 把整个组件 stub 掉，测试全绿，功能全坏。
+ *
+ * 用法：断言 `wrapper.find('.el-dialog-open').exists()`。
+ * 另渲染一个 `.el-dialog-close` 按钮，emit `update:modelValue(false)`，用于验证关闭回路。
+ */
+export function visibleDialogStub() {
+  return defineComponent({
+    name: 'ElDialogVisibleStub',
+    inheritAttrs: false,
+    props: {
+      modelValue: { type: Boolean, default: false },
+      title: { type: String, default: '' },
+    },
+    emits: ['update:modelValue', 'open', 'close'],
+    setup(props, { emit, slots }) {
+      return () =>
+        props.modelValue
+          ? h('div', { class: 'el-dialog-open' }, [
+              h('span', { class: 'el-dialog-open__title' }, props.title),
+              h(
+                'button',
+                {
+                  class: 'el-dialog-close',
+                  onClick: () => emit('update:modelValue', false),
+                },
+                '关闭'
+              ),
+              slots.default?.(),
+              slots.footer?.(),
+            ])
+          : null
+    },
+  })
+}
+
+/**
  * @param {Record<string, unknown>} props 组件 props，浮层默认关闭以便触发 open
  */
 export function overlayOptions(props = {}) {

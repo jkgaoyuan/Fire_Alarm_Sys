@@ -86,7 +86,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, watch, onMounted } from 'vue'
+import { computed, ref, reactive, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getInspectionPlanDetail, getInspectionTasks } from '@/api/inspection'
 
@@ -100,31 +100,35 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue', 'success'])
 
-const visible = ref(false)
+// ⚠️ 必须是 computed 代理到 props.modelValue，**不能**写成 `const visible = ref(false)`：
+// 那样写的话父组件传进来的 modelValue 只是被声明、从未被读，弹窗读的是另一个变量，
+// 局部 ref 没有任何路径被置 true → 计划页点「详情」永远不弹，而且不报错。
+// 2026-09-14 实测缺陷（同病三处：本文件 / RecordViewer / StatsDialog），
+// 已加静态守卫 tests/dialogContract.spec.js。
+const visible = computed({
+  get: () => props.modelValue,
+  set: (val) => emit('update:modelValue', val),
+})
 const planDetail = ref(null)
 const taskLoading = ref(false)
 const taskList = ref([])
 
 const pagination = reactive({ page: 1, page_size: 20, total: 0 })
 
+// 打开时才加载。原来监听 planId 且 immediate:true，会**在弹窗还关着的时候**就发请求；
+// 而且 planId 与 modelValue 谁先到并不确定，改成监听 modelValue 更贴合「打开」这一时机。
+// ⚠️ 必须 immediate：只监听「变化」的话，挂载时已打开（modelValue 初值 true）
+// 永远不会触发回调，弹窗开着但详情与任务列表都是空的。
 watch(
-  () => props.planId,
-  (id) => {
-    if (id) {
+  () => props.modelValue,
+  (val) => {
+    if (val && props.planId) {
+      pagination.page = 1
       loadDetail()
       loadTasks()
     }
   },
   { immediate: true }
-)
-
-watch(
-  () => visible.value,
-  (val) => {
-    if (!val) {
-      handleClose()
-    }
-  }
 )
 
 async function loadDetail() {
@@ -142,6 +146,9 @@ async function loadTasks() {
   taskLoading.value = true
   try {
     const res = await getInspectionTasks({
+      // 必须带 plan_id：不带的话拿到的是**全量任务**，
+      // 计划 A 的详情里会列出计划 B 的任务（后端此前也不支持该参数，已一并补上）
+      plan_id: props.planId,
       page: pagination.page,
       page_size: pagination.page_size,
     })
@@ -184,13 +191,17 @@ function taskStatusLabel(status) {
 }
 
 function taskStatusType(status) {
+  // 兜底必须是合法 type 或 undefined：空串会拼出不存在的 class `el-tag--`，
+  // 既触发 Element Plus 的 prop 校验告警，又让「不想强调」的待执行标签
+  // 回落到基础 .el-tag（蓝色）反而最显眼。default: 'primary' 只在 undefined
+  // 时生效，拦不住显式空串。同 Task.vue / StatsDialog.vue。
   const map = {
-    pending: '',
+    pending: undefined,
     doing: 'warning',
     completed: 'success',
     missed: 'danger',
   }
-  return map[status] || ''
+  return map[status]
 }
 
 function formatDate(dateStr) {
