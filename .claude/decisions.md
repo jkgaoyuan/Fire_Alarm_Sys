@@ -210,6 +210,31 @@
 - **来源会话**: 2026-09-14
 - **回滚条件**: 若将来给设备加上「归属人」字段（如 `responsible_user_id`），可把 `self` 锚到该字段，与任务域口径对齐；届时本降级即可撤销
 
+## DEC-022：用户信息统一在会话初始化时恢复，且必须在生成路由**之前**
+
+- **决策**: `authStore.userInfo` 的唯一有效填充点是路由守卫的 `initializeRoutes()`。其 `initPromise` 内改为**顺序**执行 `await useAuthStore().fetchUserInfo()` → `await permStore.generateRoutes()`；前面那步**不可后置、不可省略**。
+- **原因**:
+  1. `authStore.userInfo` 是**纯内存**状态，而 `accessToken` 会从 localStorage 恢复（`stores/auth.js:9`）。刷新后 token 恢复使路由守卫放行导航，但 `userInfo` 重新初始化为 `ref(null)`，而它的填充函数 `fetchUserInfo()`（`stores/auth.js:29`）**在全仓库应用代码里没有任何调用方**——此前只有它自己的单元测试在调（`stores/__tests__/auth.spec.js:61`）。后果是 `AppHeader.vue:9` 的三段兜底 `userInfo?.real_name || userInfo?.username || '用户'` 落到最后一档，顶部栏恒定显示字面量「用户」。
+  2. 登录瞬间正常，是因为 `login()` 用登录响应的 `data.user` 填了一次（`stores/auth.js:22`）——**两条路径只有一条有填充**，这正是该缺陷能长期存在的原因。
+  3. **顺序必须在 `generateRoutes()` 之前**：`isRoutesLoaded` 是在 `generateRoutes()` 末尾才置位的。若把用户信息放在其后且它失败，就会停在一个半初始化态——守卫见 `isRoutesLoaded === true` 直接跳过 `initializeRoutes()`，重试路径被跳过，`userInfo` 永远为 null，等于把缺陷埋得更深。
+- **不吞异常**: 该步失败即抛，让初始化整体重试。吞掉它正是仓库教训 1 记录的形态（「对两种形状都放行 → 页面显示 0 而不报错」），会把故障从「报错」退化为「静默显示兜底文案」。
+- **影响范围**: `frontend/src/router/index.js`、`frontend/src/stores/auth.js`（`fetchUserInfo` 自此是 `userInfo` 的唯一有效写入方）、`frontend/src/router/__tests__/index.spec.js`（+3 条用例）
+- **来源会话**: 2026-09-14 23:11（commit `210b6b7b`）
+- **回滚条件**: 若改为把 `userInfo` 持久化到 localStorage 以省下一次请求，需重新评估——但那会引入**陈旧数据**问题（改名/改角色后不刷新即不生效），且必须同时保证登出清除。当前选择的代价是每次冷启动多一次 `GET /users/me`。
+- **连带约束**: 新增任何依赖 `userInfo` 字段的代码前，先确认该字段在 `GET /users/me` 的响应里存在——**不要**指望登录响应提供它（见 DEC-023）。
+
+## DEC-023：登录响应不再返回 `roles`，用户身份字段统一从 `GET /users/me` 取
+
+- **决策**: `POST /auth/login` 响应中的 `data.user` 只保留 `id` / `username` / `real_name`，**移除 `roles`**。用户角色一律从 `GET /users/me` 获取。
+- **原因**:
+  1. 同一份 `authStore.userInfo` 有**两个写入方、两种形状**：登录响应返回 `["chief"]`（`role_code` 字符串数组，`auth_service.py`），而 `/users/me` 返回 `[{id, role_code, role_name}]`（对象数组，`users.py:63-66`）。两者都写进同一个 ref。
+  2. 该字段**两端都没有消费者**：前端 `userInfo` 的唯一读取点是 `AppHeader.vue:9`，只取 `real_name`/`username`；全前端唯一的 `roles` 消费点 `OrderList.vue:201` 遍历的是 `repairerOptions`（来自 `GET /users`），与 `userInfo` 无关；后端 `tests/test_auth.py` 只断言 `access_token`/`username`/`real_name`，`tests/e2e/common.py:65` 只取 `access_token`；`tokens["user"]` 全仓库只有 `auth.py:74` 一处透传。
+  3. 保留 `id`/`username`/`real_name` 的理由：这三者**不是**死字段——`AppHeader.vue:9` 读 `real_name || username`，而 `stores/auth.js:22` 正是把登录响应的 `user` 写进 `userInfo`。删掉它们会让登录瞬间没有名字可显示。
+  4. 真正的暴露面不在 `roles` 自身（它没人读），而在**未来**：往 `userInfo` 上读一个登录响应里不存在的新字段（`data_scope` / `org` / `phone` / `email`）时，会出现**取决于走哪条路径**的 `undefined`——那类比固定崩溃难查。见 DEC-022 的连带约束。
+- **影响范围**: `backend/app/services/auth_service.py`、`frontend/src/stores/auth.js`（写入方形状随即归一）、`backend/tests/test_auth.py`（新增钉死用例）
+- **来源会话**: 2026-09-14 23:11（commit `6d84d03b`）
+- **回滚条件**: 若未来确需「登录即拿到角色」以避免额外请求，正确做法是让 `GET /users/me` 成为唯一来源并在登录后调它，**而不是恢复第二种形状**——`test_login_response_does_not_publish_roles` 会立即打红。（该用例刻意让用户**确实持有角色**并先断言 `len(user.roles) == 1`，否则「已删掉」与「环境本来就没角色」无法区分。）
+
 ---
 
 ## 未编号的计划调整（非 ADR，仅备查）
