@@ -250,6 +250,60 @@ cd backend && E2E_BASE_URL=http://localhost:8000/api/v1 python -m pytest -m e2e 
     本缺陷自 `c4a857c2`（3.7 开发）起存在，只因 `/records` 两个端点
     **零用例覆盖**而横跨两次交付未被发现。
 
+31. **浮层复用 `overlayStub` 会把「弹窗压根没打开」断言成真**。
+    `views/device/__tests__/mount.js` 的 `overlayStub()` 是**无条件渲染**内容的——
+    它把浮层里的一切都塞进 DOM，不管 `modelValue` 是真是假。于是
+    `expect(wrapper.text()).toContain('...')` 这类断言**永远为真**，
+    正好把这个缺陷家族（见第 32 条）盖得严严实实。
+    **必须用 `visibleDialogStub()`**：它按 `modelValue` 决定内容是否渲染
+    （`v-if` 语义，命中时挂 `.el-dialog-open`），并提供一个 `.el-dialog-close`
+    按钮用于验证关闭回路。断言写成
+    `expect(wrapper.find('.el-dialog-open').exists()).toBe(true)`。
+    另注：`Plan.spec.js` 用 `PlanDetail: true` 把整个子组件 stub 掉，
+    等于连挂载都没发生——**stub 掉一个组件就等于放弃了对它的所有验证**，
+    被 stub 的组件必须另有自己的 spec。
+
+32. **组件「声明了 `modelValue` 却从不读它」→ 弹窗永远打不开，且不报错**。
+    写法：`defineProps({ modelValue: Boolean })` 声明了对外契约，却把浮层的
+    `v-model` 绑在**各自的局部 `ref(false)`** 上。局部 ref 初值 false，
+    而唯一的赋值语句通常是 `handleClose` 里的 `false`——
+    **没有任何路径能把它置为 true**。父组件 `visible.value = true` 只改了 prop，
+    弹窗读的是另一个变量。症状：点按钮毫无反应，控制台干净。
+    2026-09-14 本仓库**同时三处**（`RecordViewer` / `StatsDialog` / `PlanDetail`），
+    是同一段代码抄了三遍；而同目录的 `ExecutionDialog`（`computed({get,set})`）
+    与 `PlanForm`（`watch` + `emit`）写法正确，所以只有前三个坏。
+    **正确写法**（照抄 `ExecutionDialog.vue`）：
+
+    ```js
+    const visible = computed({
+      get: () => props.modelValue,
+      set: (val) => emit('update:modelValue', val),
+    })
+    ```
+
+    配套两点：① 打开时的加载逻辑要 `watch(() => props.modelValue, fn, { immediate: true })`
+    ——只监听「变化」的话，「挂载时已是打开状态」不会触发，弹窗开着但内容是空的；
+    ② 别再多写一个 `watch(visible, ...)`，它会和 setter 互相触发并重复 emit。
+    已加静态守卫 `views/inspection/__tests__/dialogContract.spec.js`（3 违规/0 误报）。
+    **守卫的规则边界是试出来的**：不加「须声明过 modelValue」这个前提会误报 11 个
+    （页面自有弹窗绑自己的 ref 是合法的）；不放行模板直绑 `:model-value="modelValue"`
+    会误报 5 个；退化成「文件里出现 `modelValue` 字样即算消费」则会**漏掉它本该抓的那 3 个**
+    （坏文件里都有 `defineEmits(['update:modelValue'])`）。
+    还必须 `stripComments()` —— 否则它"读"的是修复时顺手写的那句说明注释。
+    ⚠️ 它**不做数据流分析**：组件若在别处读了 `props.modelValue`（如上述 `watch`），
+    守卫会放行，而此时浮层仍可能绑在局部 ref 上。**组件级用例是主力，守卫只是兜底。**
+
+33. **别断言 `wrapper.text()` 含某个词——很容易被旁边的文字命中而假绿**。
+    实测：`StatsDialog` 的用例断言 `text()` 含「每日」（周期类型），
+    而样本的计划名恰好叫「每日巡检-总部大楼」。把字段读错（`plan_cycle_type`
+    写成不存在的 `cycle_type`）之后**断言依然通过**，命中的是计划名里的「每日」。
+    这个假绿是做变异测试时暴露的。
+    **做法**：① 样本数据里，被断言的值不要与其他字段互为子串；
+    ② 一律用 `descValue(wrapper, label)` 这种**按 label 精确定位**的方式取值再比相等，
+    不要用包含匹配；③ 同理，断言「渲染出来的格子」而不是「mock 数据透传」——
+    `expect(wrapper.vm.taskList[0].records_count).toBe(2)` 只证明了 mock 自己，
+    模板改坏了它照样绿，要连 `.el-table__body` 里的 `td` 一起断言。
+
 
 ## 七、缺陷与守护用例的绑定规则
 
