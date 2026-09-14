@@ -416,9 +416,53 @@ async def get_inspection_tasks(
     )
 
 
+def _record_out(record: InspectionRecord) -> InspectionRecordResponse:
+    """
+    把 ORM 记录转成响应对象。
+
+    ⚠️ **不能**写成 `InspectionRecordResponse.model_validate(record)`：
+    `device_code` / `device_name` 在 `InspectionRecord` 上**不是列**（列只有
+    id/task_id/device_id/inspected_by/created_by/result/abnormal_desc/photos/
+    inspected_at/...），设备信息要通过 `device` 关系取。`model_validate` 读不到
+    这两个**必填**字段就抛 ValidationError → 未捕获 → 500。
+    2026-09-14 admin 提交巡检记录报的正是这个。
+
+    同一根因还有一个**静默**的：`inspected_by_name` 是 Optional，
+    `model_validate` 取不到时不报错、直接给 `None`（页面空白且无提示），
+    所以这里也一并显式取。
+
+    调用方**必须**用 `_record_query()`（或等价地 selectinload 同两个关系）
+    取记录：异步会话下访问未加载的关系会抛 MissingGreenlet。
+    """
+    return InspectionRecordResponse(
+        id=record.id,
+        task_id=record.task_id,
+        device_id=record.device_id,
+        # device_id 是非空外键，device 必然存在，不存在「取不到」的分支
+        device_code=record.device.device_code,
+        device_name=record.device.device_name,
+        result=record.result,
+        abnormal_desc=record.abnormal_desc,
+        photos=record.photos or [],
+        inspected_by=record.inspected_by,
+        # inspected_by 可空，故这里要判空
+        inspected_by_name=record.inspector.real_name if record.inspector else None,
+        created_by=record.created_by,
+        inspected_at=record.inspected_at,
+    )
+
+
+def _record_query():
+    """带 device / inspector 的记录查询（`_record_out` 依赖这两个关系已加载）"""
+    return select(InspectionRecord).options(
+        selectinload(InspectionRecord.device),
+        selectinload(InspectionRecord.inspector),
+    )
+
+
 @router.post(
     "/inspection-tasks/{task_id}/records",
-    response_model=InspectionRecordResponse,
+    response_model=Response[InspectionRecordResponse],
     summary="提交巡检记录",
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_permission("inspection:execute"))]
@@ -443,8 +487,16 @@ async def submit_record(
     # repair_crud.create（CRUDBase.create 自带 commit）而被顺带提交——
     # 这层不一致会让缺陷看起来时有时无。
     await db.commit()
+
+    # commit 会把对象置为过期（expire_on_commit），直接读 record.id 会触发
+    # 同步刷新 → MissingGreenlet。先 await refresh 取回主键，再按主键重新查询
+    # 带出 device / inspector —— 记录是刚 add() 的，这两个关系从未被加载。
     await db.refresh(record)
-    return Response(code=200, message="success", data=InspectionRecordResponse.model_validate(record))
+    full = (
+        await db.execute(_record_query().where(InspectionRecord.id == record.id))
+    ).scalar_one()
+
+    return Response(code=200, message="success", data=_record_out(full))
 
 
 # ==================== 巡检记录查询 ====================
@@ -473,7 +525,9 @@ async def get_inspection_records(
     effective_start = start_date or (today.replace(day=1))
     effective_end = end_date or today
     
-    stmt = select(InspectionRecord).where(
+    # 用 _record_query() 而不是裸 select：响应要 device_code/device_name 与
+    # inspected_by_name，这三个都取自 device / inspector 关系（见 _record_out）。
+    stmt = _record_query().where(
         InspectionRecord.inspected_at >= datetime.combine(effective_start, datetime.min.time()),
         InspectionRecord.inspected_at <= datetime.combine(effective_end, datetime.max.time()),
     )
@@ -495,7 +549,7 @@ async def get_inspection_records(
         .limit(page_size)
     )).scalars().all()
     
-    items = [InspectionRecordResponse.model_validate(r) for r in results]
+    items = [_record_out(r) for r in results]
     
     return Response(
         code=200,

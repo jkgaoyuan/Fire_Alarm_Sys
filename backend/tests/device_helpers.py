@@ -4,9 +4,12 @@
 构造组织架构 / 设备类型 / 带权限用户，并生成认证头。
 """
 
+from uuid import uuid4
+
 from sqlalchemy import select
 
 from app.core.security import create_access_token
+from app.models.device import Device
 from app.models.device_type import DeviceType
 from app.models.organization import Organization
 from app.models.user import User
@@ -32,6 +35,32 @@ async def create_org(db, org_name: str, parent: Organization | None = None) -> O
     await db.commit()
     await db.refresh(org)
     return org
+
+
+async def make_device(
+    db,
+    *,
+    org_id: int,
+    device_code: str | None = None,
+    device_name: str = "测试设备",
+) -> Device:
+    """
+    建一台设备（绕过 API 直接落库，只为给其它域提供 device_id 外键）。
+
+    原先定义在 `tests/repair_helpers.py`，但巡检记录同样需要它——设备是跨域
+    共用对象，放在设备域 helper 里，各域直接 import，不必跨域引用。
+    `repair_helpers` 保留同名再导出，既有调用方不受影响。
+    """
+    device = Device(
+        device_code=device_code or f"DEV-{uuid4().hex[:8].upper()}",
+        device_name=device_name,
+        org_id=org_id,
+        status="normal",
+    )
+    db.add(device)
+    await db.commit()
+    await db.refresh(device)
+    return device
 
 
 async def create_device_type(

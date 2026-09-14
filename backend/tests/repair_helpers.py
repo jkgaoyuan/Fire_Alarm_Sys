@@ -7,24 +7,9 @@
 
 from uuid import uuid4
 
-from app.models.device import Device
 from app.models.repair import RepairOrder
 from tests.auth_helpers import auth_headers, create_user_with_perms  # noqa: F401
-from tests.device_helpers import create_org  # noqa: F401
-
-
-async def make_device(db, *, org_id: int, device_code: str | None = None) -> Device:
-    """建一台设备（绕过 API 直接落库，只为给工单提供 device_id）"""
-    device = Device(
-        device_code=device_code or f"DEV-{uuid4().hex[:8].upper()}",
-        device_name="测试设备",
-        org_id=org_id,
-        status="normal",
-    )
-    db.add(device)
-    await db.commit()
-    await db.refresh(device)
-    return device
+from tests.device_helpers import create_org, make_device  # noqa: F401
 
 
 async def make_repair_order(

@@ -88,3 +88,38 @@ async def make_task(
 def task_ids(body: dict) -> set[int]:
     """从列表响应信封里取出任务 id 集合"""
     return {item["id"] for item in body["data"]["items"]}
+
+
+async def make_record(
+    db,
+    *,
+    task_id: int,
+    device_id: int,
+    inspected_by: int | None = None,
+    result: str = "normal",
+    abnormal_desc: str | None = None,
+):
+    """
+    建一条巡检记录（绕过 API，直接落库）。
+
+    用途：把「读接口」的用例与「写接口」解耦——否则列表用例要先调提交接口，
+    提交一坏它就跟着坏，无法区分是哪一端的问题。
+    """
+    from datetime import datetime
+
+    from app.models.inspection import InspectionRecord
+
+    record = InspectionRecord(
+        task_id=task_id,
+        device_id=device_id,
+        inspected_by=inspected_by,
+        created_by=inspected_by,
+        result=result,
+        abnormal_desc=abnormal_desc,
+        photos=[],
+        inspected_at=datetime.now(),
+    )
+    db.add(record)
+    await db.commit()
+    await db.refresh(record)
+    return record

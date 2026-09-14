@@ -222,12 +222,33 @@ cd backend && E2E_BASE_URL=http://localhost:8000/api/v1 python -m pytest -m e2e 
     顺序不能反——先 `expire_all()` 再读 `e["mine"].id`，会在**测试自己**身上触发
     同步刷新并抛 MissingGreenlet，把「接口有没有 500」这个待测问题淹掉。
     见 `tests/test_repair_authz.py::test_in_scope_detail_survives_fresh_session`。
+    **2026-09-14 又踩一次**：写 `tests/test_inspection_records.py` 时明知本条，
+    两个用例仍忘了 `expire_all()`，去掉 `selectinload` 后 5 条**全绿**。
+    是靠「拆掉修复看用例是否变红」的变异验证才发现的——**别信自己记得住，
+    用变异验证兜底**。
 
 29. **迁移一个端点时，必须扫一遍「谁在断言它的响应形状」**。
     统一信封那轮，`linkage_plans.py` 的 toggle 改完是绿的，
     而 `test_api_contract_regressions.py::test_linkage_toggle_accepts_explicit_state`
     （早先自己写的）断言的还是裸 `resp.json()["is_enabled"]`，直接被打红。
     这类耦合不会自己浮现，得主动 grep：`grep -rn "json()\[" tests/ | grep -v '"code"\|"data"'`。
+
+30. **`model_validate(ORM 对象)` 只对「schema 字段 ⊆ 模型属性」成立**。
+    schema 里声明了模型上**没有**的字段时，必填的抛 `ValidationError`（→ 500），
+    可空的**静默给 `None`**（页面空白、无任何提示，更难发现）。
+    「设备编码/名称」这类要跨关系取的字段最容易中招，本仓库已两次：
+    `RepairOrderResponse.device_name`（`order.device.device_name`）与
+    `InspectionRecordResponse.device_code/device_name`（`record.device.*`）。
+    后者 2026-09-14 由 admin 提交巡检记录暴露，**两个端点同时坏**
+    （`POST /inspection-tasks/{id}/records` 与 `GET /inspection-records`），
+    且因 `device_code` 是 `str` 必填而报 500；同一 schema 的
+    `inspected_by_name` 因为可空，坏得更早却一直没人发现。
+    **正确做法**：显式构造响应（如 `_record_out()`），跨关系的字段从关系上取，
+    并把关系 `selectinload` 上——`model_validate` 省下的那点代码不值得。
+    排查口径：拿 schema 的必填字段减去模型的列，差集里凡是「看起来像别的表上的字段」
+    就是这类缺陷。**写完还要问一句：这条路径有没有测试？**
+    本缺陷自 `c4a857c2`（3.7 开发）起存在，只因 `/records` 两个端点
+    **零用例覆盖**而横跨两次交付未被发现。
 
 
 ## 七、缺陷与守护用例的绑定规则
