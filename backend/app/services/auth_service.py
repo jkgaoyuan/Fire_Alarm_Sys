@@ -247,11 +247,13 @@ async def login_user(
         "refresh_token": tokens["refresh_token"],
         "jti": tokens["jti"],
         "refresh_jti": tokens["refresh_jti"],
+        # 只回身份字段（前端 AppHeader 读 real_name/username）。
+        # 不再回 roles：/users/me 返回的是对象数组，这里曾返回字符串数组，
+        # 同一份 authStore.userInfo 由此有两种形状，且该字段两端都无消费者。
         "user": {
             "id": user.id,
             "username": user.username,
             "real_name": user.real_name,
-            "roles": [r.role_code for r in user.roles],
         },
     }
 

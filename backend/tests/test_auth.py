@@ -8,6 +8,7 @@ import pytest
 from app.core.security import create_access_token, decode_token, get_password_hash
 from app.models.user import User
 from app.services.auth_service import create_token_pair, save_token_whitelist
+from tests.auth_helpers import create_user_with_perms
 
 
 @pytest.mark.asyncio
@@ -34,6 +35,31 @@ async def test_login_success(client, db_session):
     assert data["data"]["user"]["username"] == "admin"
     assert data["data"]["user"]["real_name"] == "管理员"
     assert "refresh_token" in response.cookies
+
+
+@pytest.mark.asyncio
+async def test_login_response_does_not_publish_roles(client, db_session):
+    """登录响应不返回 roles —— 用户角色统一从 GET /users/me 取。
+
+    此前登录响应返回 `["chief"]`（role_code 字符串数组），而 /users/me 返回
+    `[{id, role_code, role_name}]`（对象数组）：同一份 authStore.userInfo 有
+    两个写入方、两种形状。该字段两端都没有消费者（前端 userInfo 的唯一读取点
+    AppHeader 只取 real_name/username），已移除。
+
+    钉死它，是为了避免未来有人读 userInfo.roles 时，行为取决于用户走的是
+    「登录后直接进页面」还是「刷新页面」——那类路径相关的 undefined 比固定崩溃难查。
+    """
+    user = await create_user_with_perms(db_session, "roleholder", ["device:view"])
+    # 该用户确实持有角色，若有人把 roles 加回响应，本用例会失败
+    assert len(user.roles) == 1
+
+    response = await client.post(
+        "/api/v1/auth/login",
+        json={"username": "roleholder", "password": "Test1234"},
+    )
+
+    assert response.status_code == 200
+    assert "roles" not in response.json()["data"]["user"]
 
 
 @pytest.mark.asyncio
