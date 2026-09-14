@@ -37,6 +37,7 @@ async def make_plan(
     *,
     plan_name: str,
     org_id: int | None = None,
+    device_type_id: int | None = None,
     responsible_user_id: int | None = None,
     cycle_type: str = "daily",
     is_enabled: bool = True,
@@ -48,10 +49,14 @@ async def make_plan(
 
     `start_date` 默认今天；传 `end_date` 可限定计划有效期
     （自动生成会尊重这个窗口，见 `generate_daily_tasks`）。
+
+    `org_id` / `device_type_id` 界定计划的**应检设备范围**，
+    `GET /inspection-tasks/{id}/devices` 按这两个字段取数。
     """
     plan = InspectionPlan(
         plan_name=plan_name,
         org_id=org_id,
+        device_type_id=device_type_id,
         responsible_user_id=responsible_user_id,
         cycle_type=cycle_type,
         start_date=start_date or date.today(),

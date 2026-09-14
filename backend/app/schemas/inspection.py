@@ -172,6 +172,33 @@ class InspectionRecordResponse(BaseModel):
     inspected_at: datetime
 
 
+class InspectionTaskDeviceItem(BaseModel):
+    """
+    巡检任务的「应检设备」条目（供执行巡检弹窗的设备选择器使用）。
+
+    只保留选择器要展示/判断的字段，不返回设备档案的全量形态：
+    这里要回答的是「这个任务该检哪些设备」，不是「设备档案长什么样」。
+    """
+
+    id: int
+    device_code: str
+    device_name: str
+    type_id: Optional[int] = None
+    type_name: Optional[str] = None
+    org_id: Optional[int] = None
+    org_name: Optional[str] = None
+    status: str
+
+
+class InspectionTaskDevicePagination(BaseModel):
+    """应检设备分页响应"""
+
+    items: List[InspectionTaskDeviceItem]
+    total: int
+    page: int
+    page_size: int
+
+
 class InspectionMissedStat(BaseModel):
     """漏检统计数据"""
 
@@ -225,6 +252,8 @@ __all__ = [
     "InspectionTaskWithDetails",
     "InspectionRecordLite",
     "InspectionRecordResponse",
+    "InspectionTaskDeviceItem",
+    "InspectionTaskDevicePagination",
     "InspectionMissedStat",
     # 分页封装
     "InspectionPlanPagination",

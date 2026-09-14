@@ -43,6 +43,8 @@ async def make_device(
     org_id: int,
     device_code: str | None = None,
     device_name: str = "测试设备",
+    type_id: int | None = None,
+    status: str = "normal",
 ) -> Device:
     """
     建一台设备（绕过 API 直接落库，只为给其它域提供 device_id 外键）。
@@ -50,12 +52,16 @@ async def make_device(
     原先定义在 `tests/repair_helpers.py`，但巡检记录同样需要它——设备是跨域
     共用对象，放在设备域 helper 里，各域直接 import，不必跨域引用。
     `repair_helpers` 保留同名再导出，既有调用方不受影响。
+
+    `type_id` / `status` 供「应检设备按类型过滤」「退役设备不应出现」这类
+    用例构造前提（巡检域 `GET /inspection-tasks/{id}/devices`）。
     """
     device = Device(
         device_code=device_code or f"DEV-{uuid4().hex[:8].upper()}",
         device_name=device_name,
         org_id=org_id,
-        status="normal",
+        type_id=type_id,
+        status=status,
     )
     db.add(device)
     await db.commit()

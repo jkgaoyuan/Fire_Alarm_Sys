@@ -47,9 +47,13 @@ from app.schemas.inspection import (
     InspectionRecordCreate,
     InspectionRecordResponse,
     InspectionRecordPagination,
+    InspectionTaskDeviceItem,
+    InspectionTaskDevicePagination,
     InspectionMissedStat,
 )
 from app.crud.inspection import inspection_plan_crud, inspection_task_crud, inspection_record_crud
+from app.services.device_service import list_devices_by_scope
+from app.services.monitor_service import resolve_descendant_org_ids
 from app.services.inspection_service import (
     apply_task_data_scope,
     generate_tasks_for_plan,
@@ -431,6 +435,101 @@ async def get_inspection_tasks(
             page=page,
             page_size=page_size,
         )
+    )
+
+
+@router.get(
+    "/inspection-tasks/{task_id}/devices",
+    response_model=Response[InspectionTaskDevicePagination],
+    summary="获取巡检任务的应检设备",
+    dependencies=[Depends(require_permission("inspection:execute"))],
+)
+async def get_task_devices(
+    task_id: int,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(100, ge=1, le=100),
+    keyword: Optional[str] = None,
+    user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    「执行巡检」设备选择器的数据源：**该任务所属计划范围内**的设备。
+
+    取代原先直接调 `GET /devices` 的做法。那个做法有两个问题：
+
+    1. **维保员看不到任何设备。** `/devices` 会套通用的
+       `apply_data_scope`，`data_scope='self'` 锚的是 `devices.created_by`
+       ——设备的录入人，与「该由谁巡检」无关。设备通常由管理员录入，
+       于是维保员的设备列表恒为空，且返回 `code 200 / message success`、
+       **不报错**，界面上只是一张空表格（2026-09-14 实测）。
+       这与 `apply_task_data_scope` 开头那段注释要解决的是同一类问题。
+    2. **范围本身是错的。** 全量设备表意味着可以挑一台根本不在该计划范围内的
+       设备来填报——任务只覆盖某区域某类设备，记录却可以落在任意设备上。
+
+    范围口径 = 计划的 `org_id`（**含全部子区域**）+ `device_type_id`（为空即不限类型），
+    只取在役设备（未逻辑删除、未退役）。
+
+    **授权**：先按 `apply_task_data_scope` 确认该任务对当前用户可见，
+    看不到任务就看不到它的设备——避免这个端点变成绕过设备数据权限的枚举入口。
+    """
+    task_stmt = (
+        select(InspectionTask)
+        .options(selectinload(InspectionTask.plan))
+        .where(InspectionTask.id == task_id)
+    )
+    task_stmt = await apply_task_data_scope(task_stmt, user, db)
+    task = (await db.execute(task_stmt)).scalar_one_or_none()
+    if task is None:
+        raise HTTPException(status_code=404, detail="巡检任务不存在或无权访问")
+
+    plan = task.plan
+
+    # 计划没挂区域时无法界定范围，宁可返回空也不要放开成全量设备
+    org_ids = (
+        await resolve_descendant_org_ids(db, plan.org_id)
+        if plan is not None and plan.org_id is not None
+        else []
+    )
+    if not org_ids:
+        return Response(
+            code=200,
+            message="success",
+            data=InspectionTaskDevicePagination(
+                items=[], total=0, page=page, page_size=page_size
+            ),
+        )
+
+    devices, total = await list_devices_by_scope(
+        db,
+        org_ids=org_ids,
+        type_id=plan.device_type_id,
+        keyword=keyword,
+        page=page,
+        page_size=page_size,
+    )
+
+    items = [
+        InspectionTaskDeviceItem(
+            id=d.id,
+            device_code=d.device_code,
+            device_name=d.device_name,
+            type_id=d.type_id,
+            # device_type / org 已由 list_devices_by_scope 用 selectinload 预加载，
+            # 这里读关系不会触发懒加载
+            type_name=d.device_type.type_name if d.device_type else None,
+            org_id=d.org_id,
+            org_name=d.org.org_name if d.org else None,
+            status=d.status,
+        )
+        for d in devices
+    ]
+
+    return Response(
+        code=200,
+        message="success",
+        data=InspectionTaskDevicePagination(
+            items=items, total=total, page=page, page_size=page_size
+        ),
     )
 
 

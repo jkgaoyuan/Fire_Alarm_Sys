@@ -27,7 +27,9 @@
       />
       
       <el-table
+        v-loading="deviceLoading"
         :data="filteredDevices"
+        :empty-text="deviceSearch ? '没有匹配的设备' : '该任务范围内没有可检设备'"
         highlight-current-row
         @current-change="handleDeviceSelect"
       >
@@ -97,8 +99,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import { submitInspectionRecord } from '@/api/inspection'
-import { getDevices } from '@/api/device'
+import { getTaskDevices, submitInspectionRecord } from '@/api/inspection'
 import {
   deviceStatusLabel,
   deviceStatusType,
@@ -120,6 +121,7 @@ const visible = computed({
 })
 const formRef = ref()
 const submitLoading = ref(false)
+const deviceLoading = ref(false)
 const deviceSearch = ref('')
 const currentSelectedDevice = ref(null)
 const allDevices = ref([])
@@ -134,23 +136,35 @@ const rules = {
   result: [{ required: true, message: '请选择巡检结果', trigger: 'change' }],
 }
 
+// ⚠️ 必须 immediate：只监听「变化」的话，若挂载时 taskId 已有值
+// （父组件先设 currentTaskId 再打开）回调不会触发，设备列表恒为空。
+// 另外还要监听 modelValue：同一个任务关掉再打开时 taskId 没变，
+// 只有打开这个动作能触发重新拉取（否则拿到的是上次的陈旧数据）。
 watch(
-  () => props.taskId,
-  (taskId) => {
-    if (taskId) {
+  [() => props.modelValue, () => props.taskId],
+  ([visible, taskId]) => {
+    if (visible && taskId) {
       loadDevices()
     }
-  }
+  },
+  { immediate: true }
 )
 
 // ==================== 数据加载 ====================
 
 async function loadDevices() {
+  deviceLoading.value = true
   try {
-    const res = await getDevices({ page: 1, page_size: 100 })
+    // 用任务自己的「应检设备」，不要用全量 /devices：
+    // 后者套通用数据权限（self 锚 created_by），维保员拿到的永远是空表，
+    // 且 code 200 不报错；同时它也允许挑到该计划范围之外的设备。
+    const res = await getTaskDevices(props.taskId, { page: 1, page_size: 100 })
     allDevices.value = res.data?.items || []
   } catch (err) {
-    ElMessage.error('加载设备列表失败')
+    allDevices.value = []
+    ElMessage.error(err.message || '加载应检设备失败')
+  } finally {
+    deviceLoading.value = false
   }
 }
 

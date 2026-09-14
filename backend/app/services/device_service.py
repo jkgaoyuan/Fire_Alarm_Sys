@@ -191,6 +191,60 @@ async def list_devices(
     return list(result.scalars().all()), total
 
 
+async def list_devices_by_scope(
+    db: AsyncSession,
+    *,
+    org_ids: list[int],
+    type_id: int | None = None,
+    keyword: str | None = None,
+    page: int = 1,
+    page_size: int = 100,
+) -> tuple[list[Device], int]:
+    """
+    按「组织集合 + 设备类型」取在役设备并分页。
+
+    ⚠️ **刻意不套 `apply_data_scope`**：数据权限的锚点应由**调用方**决定，
+    而不是无条件锚 `created_by` —— 理由与 `inspection_service.apply_task_data_scope`
+    开头那段注释完全一致，那是本仓库为解决同一类问题立下的口径。
+
+    设备上的 `created_by` 是「谁录的档案」，而巡检场景里「这台设备该不该我检」
+    取决于它属于哪个区域、属于哪类设备，与录入人无关。实测（2026-09-14）：
+    维保员 `data_scope='self'`，而设备都是管理员录的 →
+    `GET /devices` 返回 `total=0` 且 **`code 200 / message success`、不报错**，
+    「执行巡检」的设备列表恒为空，点开只有一张空表格。
+
+    **调用方必须自行完成授权判定**（例如先确认该巡检任务对当前用户可见）。
+    筛选条件复用 `_apply_filters`，避免「在役设备」出现第二份定义。
+    """
+    base = await _apply_filters(
+        select(Device),
+        keyword=keyword,
+        type_id=type_id,
+        # org 条件单独加：这里要的是「组织集合」，而 _apply_filters 只接受单个 org_id
+        org_id=None,
+    )
+    scoped = base.where(Device.org_id.in_(org_ids))
+
+    # count 与 items 复用同一份条件，避免 total 与列表口径不一致
+    count_result = await db.execute(select(func.count()).select_from(scoped.subquery()))
+    total = count_result.scalar() or 0
+
+    skip = (page - 1) * page_size
+    # 预加载 device_type / org：调用方要展示类型名与区域名，
+    # 不预加载的话读这两个关系会触发异步懒加载 → MissingGreenlet（500），
+    # 或者更糟——被 getattr 兜成 None，页面显示空白而不报错。
+    result = await db.execute(
+        scoped.options(
+            selectinload(Device.device_type),
+            selectinload(Device.org),
+        )
+        .order_by(Device.id.desc())
+        .offset(skip)
+        .limit(page_size)
+    )
+    return list(result.scalars().all()), total
+
+
 async def _get_device_in_scope(
     db: AsyncSession, device_id: int, user: User
 ) -> Device | None:

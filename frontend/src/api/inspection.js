@@ -74,6 +74,20 @@ export function getInspectionTasks(params) {
   })
 }
 
+// 获取某巡检任务的「应检设备」（执行巡检弹窗的设备选择器）
+//
+// 不要改用 getDevices（@/api/device）：/devices 会套通用数据权限，
+// data_scope='self' 锚的是 devices.created_by，维保员因此看不到任何设备，
+// 且返回 code 200 不报错，界面上只是一张空表格。见后端
+// app/api/v1/inspection.py 的 get_task_devices 注释。
+export function getTaskDevices(taskId, params) {
+  return request({
+    url: `/inspection-tasks/${taskId}/devices`,
+    method: 'get',
+    params,
+  })
+}
+
 // 提交巡检记录
 export function submitInspectionRecord(taskId, data) {
   return request({

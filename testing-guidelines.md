@@ -304,6 +304,21 @@ cd backend && E2E_BASE_URL=http://localhost:8000/api/v1 python -m pytest -m e2e 
     `expect(wrapper.vm.taskList[0].records_count).toBe(2)` 只证明了 mock 自己，
     模板改坏了它照样绿，要连 `.el-table__body` 里的 `td` 一起断言。
 
+34. **断言「某事没有发生」时，要确认拦住它的是被测的那段代码，而不是它后面某个意外异常**。
+    实测（2026-09-14，`ExecutionDialog`）：用例断言「未选设备时不得提交」——
+    `expect(submitInspectionRecord).not.toHaveBeenCalled()`。把守卫
+    `if (!currentSelectedDevice.value) { ElMessage.warning(...); return }` 整段删掉后，
+    **这条断言依然通过**：代码继续走到 `currentSelectedDevice.value.id`，
+    在 `null` 上读属性抛 `TypeError`，被外层 `catch` 吞掉，于是「没提交」照样为真。
+    用例钉住的根本不是守卫，而是守卫后面那句会崩的代码。
+    **做法**：不要只断言"没发生副作用"，要钉住被测代码**独有的可观测副作用**
+    （这里是一条 `ElMessage.warning('请先选择设备')`）。
+    同理适用于「没弹窗」「没跳转」「没改 state」这类否定式断言——
+    它们天然容易在错误的位置上成立。
+    **通用办法还是变异测试**：把守卫拆掉，确认它真的红。
+    本会话三次假绿（第 31 条的 `overlayStub`、第 33 条的 `text()` 子串命中、
+    本条）**全都是靠变异测试才暴露的**，没有一次是靠读代码看出来的。
+
 
 ## 七、缺陷与守护用例的绑定规则
 
