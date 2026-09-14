@@ -37,7 +37,9 @@ async def apply_data_scope(query: Select, user: User, db: AsyncSession) -> Selec
     - data_scope='dept'  -> 追加 org_id IN (用户部门及所有子部门)
     - data_scope='self'  -> 追加 created_by = user.id
 
-    ⚠️ **别拿它当默认选项。** 截至 2026-09-14 本函数**已无调用方**——
+    ⚠️ **别拿它当默认选项。** 截至 2026-09-14 **生产代码中已无调用方**
+    （`app/` 全库零调用；仅 `tests/test_data_scope.py`、`tests/test_user_service.py`
+    共 10 处直接单测本函数自身）——
     它原来是设备域的过滤器，而那正是它的失败之处：`self` 锚 `created_by`
     只对「记录归属于录入人」的表成立，对**组织资产**（设备）不成立。
     按 `created_by` 过滤设备的实测后果是维保员在设备档案页看到 0 台、详情 404。

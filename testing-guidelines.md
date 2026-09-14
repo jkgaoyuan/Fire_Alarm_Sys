@@ -93,7 +93,24 @@ cd backend && E2E_BASE_URL=http://localhost:8000/api/v1 python -m pytest -m e2e 
 6. **软删除设备仍占用 `device_code`**（唯一性校验含 `is_deleted` 行），且列表任何视图都看不到它
    → 用例前缀不要跨轮次复用，否则撞码（提示语问题见待办 P2-006）。
 7. **Numeric 精度**：坐标断言用 `340.25` 这类多位小数，`340.2` 检不出精度丢失。
-8. **`self` 数据范围**：`created_by` 是 `self` 范围的唯一锚点（DEC-004），业务表漏建该字段会导致该类用户可见量恒为 0。
+8. **`self` 数据范围：锚点由各域自定，`created_by` 不是唯一锚点。**
+    本条原为「`created_by` 是 `self` 范围的**唯一锚点**（DEC-004）」——**该说法已于 2026-09-14 更正，是错的**。
+    DEC-004 只规定业务表**要有** `created_by` 字段，并没有规定它是唯一锚点。
+    按 `created_by` 过滤只对「记录归属于录入人」的表成立；对**组织资产**不成立，
+    而误用的后果是**静默的 0**（接口返回 `code 200 / message success`，页面一张空表）：
+
+    | 域 | `self` 锚在哪 | 位置 |
+    |----|---------------|------|
+    | 设备 | **降级为 `dept`**（设备无个人归属字段可锚） | `device_service.apply_device_data_scope`（DEC-021） |
+    | 巡检任务 | `responsible_user_id`（责任人，不是录入人） | `inspection_service.apply_task_data_scope` |
+    | 维修工单 | 报修/维修/验收/创建 四字段 OR | `repair_service.repair_scope_condition` |
+    | 报警/监控 | **降级为 `dept`**（自动上报的报警没有 `created_by`） | `monitor_service.resolve_visible_org_ids`（DEC-012） |
+
+    另：`user_service.apply_data_scope`（通用版，`self` 锚 `created_by`）截至 2026-09-14
+    **生产代码中已无调用方**（`app/` 零调用，只剩 10 处直接单测它自身的用例）。它还有个 `hasattr` 守卫——模型缺 `created_by` / `org_id` 时
+    **静默返回原查询（不过滤）**，多一层间接调用就几乎看不出来。新域不要拿它当默认选项。
+    **写用例时**：不要去断言「`self` 用户只看到自己创建的 X」，除非该域确实锚 `created_by`；
+    先看该域的 `apply_*_data_scope` 把 `self` 锚在哪，再照那个锚点构造前提。
 9. 数据范围目前**只作用于列表接口**，按 ID 的详情 / 历史 / 写接口未叠加，越权读取缺口见待办 P1-007（勿在测试中固化）。
 10. **WS 握手鉴权失败分两层可观测**：ASGI 层（`TestClient`）能看到 accept 前的 `close(4401)`；
     真实 uvicorn 把它转成**握手 HTTP 403**（`websockets.InvalidStatus`），浏览器侧只有 `onclose(1006)`。
