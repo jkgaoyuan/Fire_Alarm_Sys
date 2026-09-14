@@ -179,7 +179,14 @@ async def _generate_excel(
     prefix = name_map.get(task.task_type, "统计表")
     date_str = datetime.now().strftime("%Y%m%d")
     file_name = f"{prefix}_{date_str}.xlsx"
-    file_path = os.path.join(save_dir, file_name)
+
+    # ⚠️ 磁盘路径必须带 task_no（唯一约束），不能直接用 file_name：
+    # file_name 只含「类型 + 日期」，**同类型同天的两个任务必然同名**，
+    # 后者覆盖前者；而两条 DB 记录都指向同一路径，于是下载历史任务会
+    # 静默拿到后一次的内容（实测：任务 A 记着 total_rows=2，下载到的文件
+    # 却只有 1 行 —— 那是任务 B 的数据）。
+    # 用 task_no 拼路径、file_name 留给界面与下载名，两个关注点分开。
+    file_path = os.path.join(save_dir, f"{task.task_no}_{file_name}")
 
     wb.save(file_path)
     return file_path, file_name
@@ -266,7 +273,9 @@ async def _generate_word(
     drill_name = params.get("drill_name", "演练").replace("/", "_")[:30]
     date_str = datetime.now().strftime("%Y%m%d")
     file_name = f"演练报告_{drill_name}_{date_str}.docx"
-    file_path = os.path.join(save_dir, file_name)
+
+    # 同上：同一天对同一场演练重复导出会撞名并互相覆盖
+    file_path = os.path.join(save_dir, f"{task.task_no}_{file_name}")
 
     doc.save(file_path)
     return file_path, file_name

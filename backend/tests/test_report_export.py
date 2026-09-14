@@ -4,8 +4,11 @@
 覆盖：创建导出任务、查询任务状态、下载文件、任务列表、权限校验
 """
 
+import os
+
 import pytest
 import pytest_asyncio
+from openpyxl import load_workbook
 
 from fastapi import BackgroundTasks
 
@@ -14,6 +17,7 @@ from app.services.report_export_service import (
     _background_export,
     create_export_task,
     execute_export_async,
+    execute_export_sync,
 )
 from tests.conftest import TestingSessionLocal
 from tests.statistics_helpers import (
@@ -220,6 +224,45 @@ async def test_async_export_task_committed_before_handoff(db_session, export_env
     row = await db_session.get(ReportExportTask, task_id)
     assert row is not None, "异步导出任务未提交，后台 session 将取不到该行"
     assert row.status == "running"
+
+
+@pytest.mark.asyncio
+async def test_same_type_same_day_exports_do_not_share_a_file(db_session, export_env):
+    """
+    TC-EXP-REG-004 同类型、同一天的两个导出任务不得共用同一个磁盘文件。
+
+    `file_name` 只由「类型 + 日期」拼成，不含任务唯一标识，因此两个同类型
+    同天的导出必然同名：后写的覆盖先写的，而两条 DB 记录都指向同一路径 ——
+    下载先前的任务会**静默拿到后一次的内容**（不报任何错）。
+    """
+    created = []
+    try:
+        tasks = []
+        for payload in (
+            [{"date": "d1", "count": 1}],
+            [{"date": "d2", "count": 2}, {"date": "d3", "count": 3}],
+        ):
+            t = await create_export_task(
+                db_session, "alarm_trend", {}, export_env["chief"].id
+            )
+            await execute_export_sync(db_session, t, payload, "xlsx")
+            tasks.append(t)
+            created.append(t.file_path)
+
+        first, second = tasks
+        assert first.file_path != second.file_path, (
+            "两个导出任务指向了同一个磁盘路径，后者会覆盖前者"
+        )
+
+        # 先前的任务必须仍保有**自己的**内容
+        assert os.path.exists(first.file_path)
+        assert load_workbook(first.file_path).active.max_row == 2, (
+            "任务 1 的数据被任务 2 覆盖了"
+        )
+    finally:
+        for path in created:
+            if path and os.path.exists(path):
+                os.remove(path)
 
 
 # ==================== 权限校验 ====================
