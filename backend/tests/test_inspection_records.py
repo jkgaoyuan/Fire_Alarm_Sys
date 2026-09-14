@@ -40,6 +40,7 @@ from tests.inspection_helpers import (
 )
 
 RECORDS_URL = "/api/v1/inspection-records"
+TASKS_URL = "/api/v1/inspection-tasks"
 
 
 def submit_url(task_id: int) -> str:
@@ -191,6 +192,65 @@ async def test_list_records_returns_device_fields(client, db_session, rec_env):
     assert items[0]["device_code"] == expect_code
     assert items[0]["device_name"] == expect_name
     assert items[0]["inspected_by_name"] == expect_inspector
+
+
+@pytest.mark.asyncio
+async def test_task_list_reports_records_count(client, db_session, rec_env):
+    """
+    TC-INS-REC-006: 任务列表的「已记录数」必须是**真的数量**。
+
+    不修会怎样：用户提交完记录，任务列表那一列仍显示 0。
+    根因是前后端对不上——后端声明的是 `records`（列表）且**从未填充**（恒为 []），
+    前端一个页面读 `records_count`（字段根本不存在）、另一个读
+    `records?.length`，两处都被 `|| 0` 兜底成 0，**静默**而不是报错。
+    """
+    e = rec_env
+    headers = auth_headers(e["user"])
+
+    # 无记录时是 0，且字段必须存在（不能靠 || 0 兜底出一个「看起来对」的值）
+    resp = await client.get(TASKS_URL, headers=headers)
+    items = resp.json()["data"]["items"]
+    assert items, "任务列表为空，用例前提不成立"
+    assert "records_count" in items[0], f"响应里没有 records_count：{sorted(items[0])}"
+    assert items[0]["records_count"] == 0
+
+    # 落两条记录
+    for _ in range(2):
+        await make_record(
+            db_session,
+            task_id=e["task"].id,
+            device_id=e["device"].id,
+            inspected_by=e["user"].id,
+        )
+
+    resp = await client.get(TASKS_URL, headers=headers)
+    items = resp.json()["data"]["items"]
+    assert items[0]["records_count"] == 2, "已记录数没有跟着记录数走"
+
+
+@pytest.mark.asyncio
+async def test_list_response_has_no_dead_records_field(client, db_session, rec_env):
+    """
+    TC-INS-REC-007: 列表响应里不应再有恒为 [] 的 `records` 字段。
+
+    它是 InspectionTaskWithDetails 带来的，列表端点从不填充——
+    留着它就是在邀请下一个人照着读、再踩一次「恒显示 0」。
+    """
+    e = rec_env
+    await make_record(
+        db_session,
+        task_id=e["task"].id,
+        device_id=e["device"].id,
+        inspected_by=e["user"].id,
+    )
+
+    resp = await client.get(TASKS_URL, headers=auth_headers(e["user"]))
+    items = resp.json()["data"]["items"]
+
+    assert "records" not in items[0], (
+        "列表项又带上了 records 字段；它有记录时也会是 []（从不填充），"
+        "前端照着读就会显示 0"
+    )
 
 
 @pytest.mark.asyncio

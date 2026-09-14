@@ -112,6 +112,15 @@ class InspectionTaskResponse(BaseModel):
     responsible_user_id: Optional[int] = None
     responsible_user_name: Optional[str] = None
 
+    # 该任务已提交的记录数，供列表页「已记录数」列使用。
+    # ⚠️ 必须由端点**显式填充**，不能指望它自己冒出来：
+    # 该指标此前以 `records`（列表）的形式声明在 InspectionTaskWithDetails 上，
+    # 但列表端点从未填过它（全仓库 `records=` 无赋值）→ 永远是默认的 `[]`；
+    # 而前端一个页面读 `records_count`（字段根本不存在）、
+    # 另一个读 `records?.length`（恒为 0），**两个页面都恒显示 0**。
+    # 列表页要的是「数量」不是「记录列表」，故在此声明计数字段。
+    records_count: int = 0
+
 
 class InspectionTaskWithDetails(InspectionTaskResponse):
     """巡检任务详情（包含记录列表）"""
@@ -186,7 +195,11 @@ class InspectionPlanPagination(BaseModel):
 
 class InspectionTaskPagination(BaseModel):
     """巡检任务分页响应"""
-    items: List[InspectionTaskWithDetails]
+    # 用 InspectionTaskResponse 而非 WithDetails：列表端点建的就是前者，
+    # 而 WithDetails 多出的 `records` 列表从未被填充过——声明它只会让响应里
+    # 出现一个恒为 [] 的字段，前端照着读就会显示 0（实际发生过）。
+    # 需要记录数请用 InspectionTaskResponse.records_count。
+    items: List[InspectionTaskResponse]
     total: int
     page: int
     page_size: int

@@ -61,7 +61,10 @@
       </el-table-column>
       <el-table-column label="记录数" width="80" align="center">
         <template #default="{ row }">
-          {{ row.records?.length || 0 }}
+          <!-- 用 records_count（后端列表接口返回的计数），不能用 row.records?.length：
+               后端列表接口从不填充 records 列表，那样写恒为 0。
+               见 backend/app/schemas/inspection.py 的 InspectionTaskResponse 注释。 -->
+          {{ row.records_count || 0 }}
         </template>
       </el-table-column>
       <el-table-column prop="completed_at" label="完成时间" width="180">

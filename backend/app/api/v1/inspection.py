@@ -378,7 +378,19 @@ async def get_inspection_tasks(
         .offset(skip)
         .limit(page_size)
     )).scalars().all()
-    
+
+    # 「已记录数」：一条 group by 把本页所有任务的记录数一次查出来。
+    # 不要放进下面的循环里逐个查——那是 N+1。
+    task_ids = [t.id for t in results]
+    counts: dict[int, int] = {}
+    if task_ids:
+        cnt_stmt = (
+            select(InspectionRecord.task_id, func.count(InspectionRecord.id))
+            .where(InspectionRecord.task_id.in_(task_ids))
+            .group_by(InspectionRecord.task_id)
+        )
+        counts = {tid: n for tid, n in (await db.execute(cnt_stmt)).all()}
+
     # 加载关联数据
     items = []
     for task in results:
@@ -401,6 +413,7 @@ async def get_inspection_tasks(
             plan_cycle_type=full_task.plan.cycle_type if full_task.plan else None,
             responsible_user_id=full_task.responsible_user_id,
             responsible_user_name=full_task.responsible_user.real_name if full_task.responsible_user else None,
+            records_count=counts.get(full_task.id, 0),
         )
         items.append(item)
     
