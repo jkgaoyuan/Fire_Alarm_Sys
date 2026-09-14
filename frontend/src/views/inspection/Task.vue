@@ -67,7 +67,12 @@
       >
         <el-table-column prop="task_date" label="任务日期" width="120">
           <template #default="{ row }">
-            <el-tag :type="isToday(row.task_date) ? 'danger' : ''">
+            <!-- 非今天用 'info'（中性灰），不能写 ''：
+                 el-tag 的 type 校验只接受 primary/success/info/warning/danger，
+                 空串会拼出不存在的 class `el-tag--` → 回落到基础 .el-tag（蓝色），
+                 而 default: 'primary' 只在 undefined 时生效、拦不住显式空串。
+                 结果就是「不想强调」反而渲染成最显眼的蓝，外加 dev 控制台告警。 -->
+            <el-tag :type="isToday(row.task_date) ? 'danger' : 'info'">
               {{ formatDate(row.task_date) }}
             </el-tag>
           </template>

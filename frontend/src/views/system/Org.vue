@@ -235,8 +235,11 @@ function typeLabel(type) {
 }
 
 function typeTagType(type) {
+  // 兜底必须是合法 type（'' 会触发 el-tag 的 prop 校验告警并渲染成蓝色，
+  // 见 inspection/Task.vue 同款说明）。当前后端 pattern 限定
+  // ^(building|floor|zone)$ 且三者都在 map 内，这里是纯防御。
   const map = { building: 'primary', floor: 'success', zone: 'info' }
-  return map[type] || ''
+  return map[type] || 'info'
 }
 
 function filterTree(nodes, excludeId) {
