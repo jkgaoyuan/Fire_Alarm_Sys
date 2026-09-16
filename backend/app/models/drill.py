@@ -10,13 +10,16 @@
 from datetime import datetime
 from sqlalchemy import (
     Column,
+    ForeignKey,
     Integer,
     String,
     Text,
     DateTime,
     Enum as SQLEnum,
     JSON,
+    UniqueConstraint,
 )
+from sqlalchemy.orm import relationship
 from app.models.base import Base
 from app.schemas.drill import DrillStatus, DrillType
 
@@ -63,6 +66,23 @@ class DrillEvent(Base):
     created_at = Column(DateTime, default=datetime.utcnow, comment="创建时间")
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
 
+    # 与评估的 1:1 关系（OQ-4）。此关系存在的**唯一目的**是把「删演练要连带删评估」
+    # 写成 ORM 可读的声明 —— 此前 `drill_crud.delete` 的 docstring 声称
+    # 「ORM 级联删除评估」，但模型里根本没有 relationship，于是评估行被留下成为孤儿，
+    # 而 `get_stats` 的 `avg(total_score)` 不 join 演练表，孤儿分数继续污染平均分。
+    #
+    # `passive_deletes` 刻意**不开**：开了会让 ORM 不加载子行、只依赖数据库的
+    # ON DELETE CASCADE，而测试库是 SQLite —— **SQLite 默认不强制外键**，
+    # 于是级联在测试里根本不发生（实测：开了这个开关，`test_delete_drill_cascades_evaluation`
+    # 仍红）。保持 ORM 显式级联，两个数据库都生效；数据库层的
+    # `ondelete="CASCADE"` 作为绕过 ORM 的删除路径的兜底。
+    evaluation = relationship(
+        "DrillEvaluation",
+        back_populates="drill",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+
 
 class DrillEvaluation(Base):
     """
@@ -71,10 +91,25 @@ class DrillEvaluation(Base):
     """
     
     __tablename__ = "drill_evaluations"
-    
+
+    # 唯一约束：`drill_id` 与演练 1:1（OQ-4）。此前只有应用层的 check-then-act
+    # 守卫（`submit_evaluation` 先查后建 → 400），数据库没有兜底 —— 并发下两个请求
+    # 可以都通过检查、各插一行，而 `get_by_drill_id` 用的是 `scalar_one_or_none()`，
+    # 两行同 drill_id 会抛 MultipleResultsFound，**该演练的详情页从此永久 500
+    # 且界面上没有任何删除评估的入口**。约束名与建表迁移里声明的一致。
+    __table_args__ = (
+        UniqueConstraint("drill_id", name="uq_drill_evaluations_drill_id"),
+    )
+
     id = Column(Integer, primary_key=True, autoincrement=True, comment="评估 ID")
-    drill_id = Column(Integer, nullable=False, comment="关联演练 ID")
-    
+    drill_id = Column(
+        Integer,
+        ForeignKey("drill_events.id", ondelete="CASCADE"),
+        nullable=False,
+        comment="关联演练 ID",
+    )
+    drill = relationship("DrillEvent", back_populates="evaluation")
+
     # 评估内容（JSON 格式存储）
     # [
     #   {"item": "response_time", "label": "响应时间", "score": 8, "max_score": 10, "comment": "优秀"},
