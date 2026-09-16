@@ -17,15 +17,13 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import get_settings
+from app.db.redis import get_redis_pool
 from app.models.alarm import Alarm
+from app.models.device import Device
 from app.models.linkage import LinkagePlan, AlarmLinkageLog
-from app.crud.linkage import linkage_plan_crud, alarm_linkage_log_crud
-from app.services import event_stream
+from app.crud.linkage import linkage_plan_crud
 from app.services.linkage_executor import execute_action
-from app.services.alarm_service import raise_alarm
-
-settings = get_settings()
+from app.services.alarm_service import raise_alarm, publish
 
 
 class LinkageEngineService:
@@ -89,11 +87,17 @@ class LinkageEngineService:
         检查预案是否匹配当前报警
         
         匹配规则：
-        1. org_id 精确匹配（或预案 org_id 为 null 表示全局）
-        2. fire_type 匹配（或预案 fire_type 为 null 表示不限制）
-        3. trigger_device_type_id 匹配（或为 null 表示不限制）
-        4. trigger_alarm_type 匹配（或为 null 表示不限制）
+        1. 演练告警只触发「允许模拟测试」的预案
+        2. org_id 精确匹配（或预案 org_id 为 null 表示全局）
+        3. fire_type 匹配（或预案 fire_type 为 null 表示不限制）
+        4. trigger_device_type_id 匹配（或为 null 表示不限制）
+        5. trigger_alarm_type 匹配（或为 null 表示不限制）
         """
+        # 开关必须在这里生效：否则关掉甲预案、去点乙预案的模拟，
+        # 甲预案照样会被这条演练告警触发——那这个开关就只是装饰。
+        if alarm.is_drill and not plan.is_simulation_allowed:
+            return False
+
         # org_id 匹配
         if plan.org_id is not None and plan.org_id != alarm.org_id:
             return False
@@ -171,47 +175,83 @@ class LinkageEngineService:
             await LinkageEngineService._broadcast_failed(log, plan, action, secondary_alarm)
     
     @staticmethod
+    async def _safe_publish(event_type: str, data: dict) -> None:
+        """
+        推送联动事件。**任何推送侧故障都不得影响执行结果的判定。**
+
+        原先是 `await settings.get_redis()` —— `Settings` 没有这个方法，必抛
+        AttributeError；又因为调用点在 `_execute_log` 的 try 内，异常被捕获后
+        把刚写好的 `status="success"` 覆盖成 `"failed"`。于是**每次成功执行都
+        被记成失败**，且失败文案是引擎自己的内部错误。改用全仓库统一的
+        `get_redis_pool()`，并在此处兜底（口径对齐 `alarm_service.publish`：
+        推送失败绝不回滚已提交的消防业务数据）。
+        """
+        try:
+            redis = await get_redis_pool()
+            await publish(redis, event_type, data)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[WARN] 联动事件推送失败 {event_type}: {type(exc).__name__}: {exc}")
+
+    @staticmethod
     async def _broadcast_executed(log: AlarmLinkageLog, plan: LinkagePlan, action: dict) -> None:
         """广播联动成功事件"""
-        redis = await settings.get_redis()
-        
-        data = {
-            "log_id": log.id,
-            "alarm_id": log.alarm_id,
-            "plan_id": plan.id,
-            "plan_name": plan.plan_name,
-            "action_type": log.action_type,
-            "target_device_id": log.target_device_id,
-            "status": "success",
-        }
-        
-        await event_stream.publish(redis, "linkage_executed", data)
-    
+        await LinkageEngineService._safe_publish(
+            "linkage_executed",
+            {
+                "log_id": log.id,
+                "alarm_id": log.alarm_id,
+                "plan_id": plan.id,
+                "plan_name": plan.plan_name,
+                "action_type": log.action_type,
+                "target_device_id": log.target_device_id,
+                "status": "success",
+            },
+        )
+
     @staticmethod
     async def _broadcast_failed(
-        log: AlarmLinkageLog, 
-        plan: LinkagePlan, 
+        log: AlarmLinkageLog,
+        plan: LinkagePlan,
         action: dict,
         secondary_alarm: Optional[Alarm]
     ) -> None:
         """广播联动失败事件"""
-        redis = await settings.get_redis()
-        
-        data = {
-            "log_id": log.id,
-            "alarm_id": log.alarm_id,
-            "plan_id": plan.id,
-            "plan_name": plan.plan_name,
-            "action_type": log.action_type,
-            "target_device_id": log.target_device_id,
-            "status": "failed",
-            "result_message": log.result_message,
-            "secondary_alarm_id": secondary_alarm.id if secondary_alarm else None,
-        }
-        
-        await event_stream.publish(redis, "linkage_failed", data)
-    
+        await LinkageEngineService._safe_publish(
+            "linkage_failed",
+            {
+                "log_id": log.id,
+                "alarm_id": log.alarm_id,
+                "plan_id": plan.id,
+                "plan_name": plan.plan_name,
+                "action_type": log.action_type,
+                "target_device_id": log.target_device_id,
+                "status": "failed",
+                "result_message": log.result_message,
+                "secondary_alarm_id": secondary_alarm.id if secondary_alarm else None,
+            },
+        )
+
     @staticmethod
+    async def _resolve_target_device(
+        db: AsyncSession, log: AlarmLinkageLog
+    ) -> Optional[Device]:
+        """
+        次级告警要挂在**真实设备**上：`raise_alarm` 的 `device` 必填，且
+        `org_id` / `device_code` 都从它快照。优先用日志里的目标设备，
+        没有就回退到触发这条联动的报警所属设备。
+        """
+        if log.target_device_id is not None:
+            device = await db.get(Device, log.target_device_id)
+            if device is not None:
+                return device
+
+        if log.alarm_id is not None:
+            alarm = await db.get(Alarm, log.alarm_id)
+            if alarm is not None and alarm.device_id is not None:
+                return await db.get(Device, alarm.device_id)
+
+        return None
+
     async def _create_secondary_alarm(
         db: AsyncSession,
         log: AlarmLinkageLog,
@@ -220,13 +260,25 @@ class LinkageEngineService:
         extra_message: Optional[str] = None
     ) -> Optional[Alarm]:
         """
-        生成联动失败的次级告警（alarm_type='linkage_failed', level='critical'）
+        生成联动失败的次级告警。
+
+        `alarm_type` 用 `fault` 而不是 `linkage_failed`：后者不在
+        `ALARM_TYPE_PROFILE` 里，`raise_alarm` 会直接 400。失败详情写进
+        `location_description`，来源预案在文案里说清楚。
+
+        原先这里传 `device=None` 且用非法类型，两个错误都被裸 `except` 吞掉，
+        于是「联动失败产生次级告警」从未生效过、也不留任何痕迹。
+        找不到设备时仍返回 None，但会打印告警——静默失败正是这个函数
+        烂了这么久没人发现的原因。
         """
-        # 确定目标设备 ID（优先用日志中的，其次用报警中的）
-        target_device_id = log.target_device_id
-        if target_device_id is None:
-            target_device_id = log.alarm_id  # 简化处理
-        
+        device = await LinkageEngineService._resolve_target_device(db, log)
+        if device is None:
+            print(
+                f"[WARN] 联动失败但找不到目标设备，无法生成次级告警："
+                f"log_id={log.id} plan_id={plan.id} alarm_id={log.alarm_id}"
+            )
+            return None
+
         message_parts = [
             f"联动预案 '{plan.plan_name}' 执行失败",
             f"动作类型：{log.action_type}",
@@ -235,30 +287,21 @@ class LinkageEngineService:
             message_parts.append(f"失败原因：{log.result_message}")
         if extra_message:
             message_parts.append(extra_message)
-        
-        message_parts_str = "; ".join(message_parts)
-        
-        secondary_data = {
-            "device_id": target_device_id,
-            "org_id": log.alarm_id,  # 简化处理
-            "alarm_type": "linkage_failed",
-            "alarm_level": "critical",
-            "status": "pending",
-            "is_drill": False,
-            "location_description": "; ".join(message_parts),
-        }
-        
-        # 创建次级告警（复用 alarm_service）
+
         try:
-            secondary_alarm = await raise_alarm(
+            alarm, _ = await raise_alarm(
                 db,
-                device=None,  # TODO: get device from target_device_id
-                alarm_type="linkage_failed",
-                location_description=message_parts_str,
+                device,
+                "fault",
+                is_drill=False,
+                location_description="; ".join(message_parts),
             )
-            return secondary_alarm[0] if isinstance(secondary_alarm, tuple) else secondary_alarm
-        except Exception:
-            # If alarm_service fails, just return None
+            return alarm
+        except Exception as exc:  # noqa: BLE001
+            print(
+                f"[WARN] 生成次级告警失败：{type(exc).__name__}: {exc} "
+                f"(log_id={log.id} plan_id={plan.id})"
+            )
             return None
 
 

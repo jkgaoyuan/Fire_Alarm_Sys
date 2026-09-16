@@ -84,7 +84,23 @@
           <template #default="{ row }">
             <el-button size="small" @click="viewDetail(row)">详情</el-button>
             <el-button size="small" @click="editPlan(row)">编辑</el-button>
-            <el-button size="small" type="warning" @click="simulateTrigger(row)">模拟测试</el-button>
+            <!-- 关闭了「允许模拟测试」的预案，按钮置灰并说明原因。
+                 el-tooltip 包一层 span：disabled 的按钮不派发鼠标事件，直接挂
+                 tooltip 不会显示。 -->
+            <el-tooltip
+              :disabled="row.is_simulation_allowed"
+              content="该预案已关闭「允许模拟测试」"
+              placement="top"
+            >
+              <span>
+                <el-button
+                  size="small"
+                  type="warning"
+                  :disabled="!row.is_simulation_allowed"
+                  @click="simulateTrigger(row)"
+                >模拟测试</el-button>
+              </span>
+            </el-tooltip>
             <el-button size="small" type="danger" @click="deletePlan(row)" v-if="!hasLogs(row.id)">删除</el-button>
           </template>
         </el-table-column>
@@ -291,14 +307,44 @@ function viewDetail(plan) {
   drawerVisible.value = true
 }
 
-// 模拟触发
+// 模拟测试：后端会生成一条演练告警并跑完整联动链路，
+// 返回命中了哪些预案 —— 这里必须把结果说出来，不能再只弹一句「完成」。
+// 旧实现直接跑预案动作、绕开匹配，`org_id`/类型配错也照样提示成功。
 async function simulateTrigger(plan) {
   try {
-    await LinkageApi.simulateTrigger(plan.id)
-    ElMessage.success('模拟触发完成')
+    const res = await LinkageApi.simulateTrigger(plan.id)
+
+    if (res.code !== 200 || !res.data) {
+      ElMessage.error(res.message || '模拟触发失败')
+      return
+    }
+
+    const { included_self: includedSelf, matched_plan_ids: matchedIds, logs } = res.data
+
+    // 最关键的诊断信号：演练告警发出去了，但这条预案自己没被命中。
+    // 说明它的区域/火灾类型/触发类型与报警对不上——这正是这个功能存在的意义。
+    if (!includedSelf) {
+      ElMessageBox.alert(
+        `演练告警已发出，但本预案未被命中（另外命中 ${matchedIds.length} 条预案）。` +
+        '请检查本预案的「关联区域」「火灾类型」「触发报警类型」是否与报警实际匹配。',
+        '模拟完成，但未命中本预案',
+        { type: 'warning', confirmButtonText: '知道了' }
+      )
+      return
+    }
+
+    const succeeded = (logs || []).filter((log) => log.status === 'success').length
+    ElMessage.success(
+      `模拟完成：命中 ${matchedIds.length} 条预案，执行 ${logs.length} 个动作，成功 ${succeeded} 个`
+    )
   } catch (error) {
+    // HTTP 层错误（400/409/403）拦截器已经弹过 response.data.message 了，
+    // 只有业务层错误（HTTP 200 + code 非 2xx，被拦截器以信封 reject）需要这里提示，
+    // 否则同一条错误会弹两次。
+    if (error && typeof error.code === 'number') {
+      ElMessage.error(error.message || '模拟触发失败')
+    }
     console.error('模拟触发失败:', error)
-    ElMessage.error('模拟触发失败')
   }
 }
 

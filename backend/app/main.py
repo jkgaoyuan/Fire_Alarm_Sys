@@ -8,7 +8,7 @@ from typing import Optional
 import os
 import asyncio
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -192,6 +192,33 @@ async def auth_error_handler(request: Request, exc: AuthError):
 async def not_found_error_handler(request: Request, exc: NotFoundError):
     """业务 404：HTTP 保持 200，由统一响应体 code 表达（与 3.2 接口口径一致）"""
     return JSONResponse(status_code=200, content=exc.to_dict())
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """
+    裸 `HTTPException` 此前没有任何 handler，于是走 FastAPI 默认的
+    `{"detail": "..."}` —— **绕过了统一响应信封**，而前端
+    `utils/request.js` 读的是 `response.data?.message`，取不到就退化成人人
+    皆知的「请求失败 (400)」，真正的原因（例如「预览图不存在」「该预案已禁用
+    模拟测试」）到不了用户眼前。
+
+    这正是 CLAUDE.md「教训 1」那一类问题：**约定只靠人记**。这里把它补齐，
+    HTTP 状态码照旧保留（既有用例依赖 404/401/403 的状态码），
+    `detail` 作为兼容别名一并返回——`tests/test_inspection_api.py` 与
+    两份 e2e 仍在断言它，不能顺手改掉别人的契约。
+    """
+    message = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "code": exc.status_code,
+            "message": message,
+            "detail": message,  # 兼容别名，勿在新代码里使用
+            "data": None,
+            "timestamp": int(time.time()),
+        },
+    )
 
 
 @app.exception_handler(Exception)

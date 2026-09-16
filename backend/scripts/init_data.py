@@ -71,8 +71,11 @@ MENU_LEVEL1 = [
     {"perm_code": "system:management", "perm_name": "系统管理",   "perm_type": "menu", "route_path": "/system",            "component": "Layout",                         "icon": "Setting",   "sort_order": 10},
 ]
 
-# 系统管理子菜单
+# 二级菜单（parent_code 必须是一级菜单里已存在的 perm_code）
 MENU_LEVEL2 = [
+    # 联动日志：后端列表/详情/导出三个端点与 api/linkage.js 的封装一直都在，
+    # 但此前没有这个菜单节点、前端也没有页面，整个功能对用户不可见。
+    {"perm_code": "linkage:log", "perm_name": "联动日志", "perm_type": "menu", "route_path": "/linkage/logs", "component": "views/linkage/Logs.vue", "icon": "Document", "sort_order": 1, "parent_code": "linkage:plan"},
     {"perm_code": "system:user", "perm_name": "用户管理", "perm_type": "menu", "route_path": "/system/user", "component": "views/system/User.vue", "icon": "User", "sort_order": 1, "parent_code": "system:management"},
     {"perm_code": "system:role", "perm_name": "角色管理", "perm_type": "menu", "route_path": "/system/role", "component": "views/system/Role.vue", "icon": "Role", "sort_order": 2, "parent_code": "system:management"},
     {"perm_code": "system:log", "perm_name": "登录日志", "perm_type": "menu", "route_path": "/system/login-log", "component": "views/system/LoginLog.vue", "icon": "Document", "sort_order": 3, "parent_code": "system:management"},

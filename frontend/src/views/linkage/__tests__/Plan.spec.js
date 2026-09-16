@@ -33,7 +33,8 @@ vi.mock('@/api/organization', () => ({
 }))
 
 import Plan from '../Plan.vue'
-import { getLinkagePlans } from '@/api/linkage'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { getLinkagePlans, simulateTrigger } from '@/api/linkage'
 import { getOrganizations } from '@/api/organization'
 
 function plan(id, overrides = {}) {
@@ -49,7 +50,29 @@ function plan(id, overrides = {}) {
     trigger_alarm_type: null,
     actions: [{ action_type: 'start_exhaust', params: {} }],
     is_enabled: true,
+    is_simulation_allowed: true,
     ...overrides,
+  }
+}
+
+/** 模拟测试的返回：一条演练告警 + 命中的预案 + 本次产生的日志 */
+function simResult(overrides = {}) {
+  return {
+    code: 200,
+    message: 'success',
+    data: {
+      alarm_id: 7,
+      alarm_type: 'fire',
+      org_id: 1,
+      device_id: 9,
+      device_code: 'DEV-1',
+      is_drill: true,
+      matched_plan_ids: [1],
+      matched_plan_names: ['预案1'],
+      included_self: true,
+      logs: [{ id: 1, status: 'success', action_type: 'start_exhaust' }],
+      ...overrides,
+    },
   }
 }
 
@@ -191,5 +214,77 @@ describe('联动预案列表页（3.4-F1）', () => {
 
     expect(rows(wrapper)).toHaveLength(2)
     expect(wrapper.vm.orgTree).toEqual([])
+  })
+
+  // ==================== 模拟测试 ====================
+
+  it('T11: 关闭「允许模拟测试」的预案，模拟按钮置灰', async () => {
+    getLinkagePlans.mockResolvedValue(
+      envelope([plan(1, { is_simulation_allowed: false }), plan(2)])
+    )
+    const wrapper = await mountPlan()
+
+    const buttons = wrapper.findAll('button').filter((b) => b.text().includes('模拟测试'))
+    expect(buttons[0].attributes('disabled')).toBeDefined()
+    expect(buttons[1].attributes('disabled')).toBeUndefined()
+  })
+
+  it('T12: 模拟命中本预案时，提示里给出命中数与执行结果', async () => {
+    const successSpy = vi.spyOn(ElMessage, 'success').mockImplementation(() => {})
+    simulateTrigger.mockResolvedValue(
+      simResult({
+        matched_plan_ids: [1, 2],
+        logs: [
+          { id: 1, status: 'success', action_type: 'start_exhaust' },
+          { id: 2, status: 'failed', action_type: 'close_door' },
+        ],
+      })
+    )
+
+    const wrapper = await mountPlan()
+    await wrapper.vm.simulateTrigger(wrapper.vm.plans[0])
+
+    // 旧实现只弹一句「模拟触发完成」，丢弃了整个响应——命中了几条、成功了几个
+    // 全都看不到，配错也发现不了。
+    expect(successSpy).toHaveBeenCalledWith(
+      expect.stringContaining('命中 2 条预案')
+    )
+    expect(successSpy).toHaveBeenCalledWith(
+      expect.stringContaining('成功 1 个')
+    )
+
+    successSpy.mockRestore()
+  })
+
+  it('T13: 演练告警没命中本预案时给出警示，而不是报「完成」', async () => {
+    const alertSpy = vi.spyOn(ElMessageBox, 'alert').mockResolvedValue('confirm')
+    const successSpy = vi.spyOn(ElMessage, 'success').mockImplementation(() => {})
+    simulateTrigger.mockResolvedValue(
+      simResult({ included_self: false, matched_plan_ids: [2], logs: [] })
+    )
+
+    const wrapper = await mountPlan()
+    await wrapper.vm.simulateTrigger(wrapper.vm.plans[0])
+
+    // 这是这个功能最该暴露的情况：预案的区域/类型配得对不上真实报警
+    expect(alertSpy).toHaveBeenCalled()
+    expect(successSpy).not.toHaveBeenCalled()
+
+    alertSpy.mockRestore()
+    successSpy.mockRestore()
+  })
+
+  it('T14: 模拟被后端拒绝时，用后端给的原因提示', async () => {
+    // 拦截器对 HTTP 层错误已经弹过 response.data.message，组件不能再弹一个
+    // 笼统的「模拟触发失败」把真实原因盖掉；这里的错是业务层 reject 出的信封。
+    const errorSpy = vi.spyOn(ElMessage, 'error').mockImplementation(() => {})
+    simulateTrigger.mockRejectedValue({ code: 400, message: '该预案已禁用模拟测试' })
+
+    const wrapper = await mountPlan()
+    await wrapper.vm.simulateTrigger(wrapper.vm.plans[0])
+
+    expect(errorSpy).toHaveBeenCalledWith('该预案已禁用模拟测试')
+
+    errorSpy.mockRestore()
   })
 })

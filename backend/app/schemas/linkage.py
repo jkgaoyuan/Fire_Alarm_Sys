@@ -23,6 +23,7 @@ class LinkagePlanBase(BaseModel):
     )
     actions: list[dict] = Field(default=list, description="动作列表")
     is_enabled: bool = Field(True, description="是否启用")
+    is_simulation_allowed: bool = Field(True, description="是否允许模拟测试")
 
 
 class LinkagePlanCreate(LinkagePlanBase):
@@ -40,6 +41,7 @@ class LinkagePlanUpdate(BaseModel):
     trigger_alarm_type: Optional[str] = None
     actions: Optional[list[dict]] = None
     is_enabled: Optional[bool] = None
+    is_simulation_allowed: Optional[bool] = None
 
 
 class LinkagePlanOut(BaseModel):
@@ -57,6 +59,7 @@ class LinkagePlanOut(BaseModel):
     trigger_alarm_type: Optional[str] = None
     actions: list[dict]
     is_enabled: bool
+    is_simulation_allowed: bool = True
     created_by: Optional[int] = None
     created_at: datetime
     updated_at: datetime
@@ -113,16 +116,23 @@ class AlarmLinkageLogOut(BaseModel):
     # 模拟触发的日志没有真实告警，故可空
     alarm_id: Optional[int] = None
     plan_id: Optional[int] = None
+    # 展示用：列表页只有 id 的话还得再查一次预案/设备才能显示名字
+    plan_name: Optional[str] = None
     action_type: str
     target_device_id: Optional[int] = None
+    target_device_name: Optional[str] = None
     status: str
     executed_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     result_message: Optional[str] = None
     is_simulation: bool
+    # 该日志是否由演练告警触发。日志表本身没有这个字段，取自关联告警的
+    # `is_drill`——「这条联动是真火警跑的，还是模拟测试跑的」必须能分辨，
+    # 否则事后回看时两者长得一模一样。
+    is_drill: bool = False
     delay_seconds: int
     created_at: datetime
-    
+
     class Config:
         from_attributes = True
 
@@ -175,6 +185,32 @@ class LinkageExecuteResult(BaseModel):
 
     message: str
     logs: list[AlarmLinkageLogOut]
+
+
+class LinkageSimulateResult(BaseModel):
+    """
+    模拟测试的结果。
+
+    模拟会生成一条**演练告警**并交给联动引擎按真实规则匹配，因此结果里
+    必须能看出「到底命中了哪些预案」——`included_self` 是其中的关键信号：
+    它为假说明**被点击的这条预案在当前配置下不会被任何报警触发**，
+    而这正是旧实现（直接跑预案动作、绕开匹配）永远暴露不出来的问题。
+    """
+
+    alarm_id: int = Field(..., description="生成的演练告警 ID")
+    alarm_type: str = Field(..., description="所用报警类型：fire/pre_fire")
+    org_id: Optional[int] = Field(None, description="告警所属区域")
+    device_id: int = Field(..., description="承载该告警的设备")
+    device_code: Optional[str] = None
+    is_drill: bool = Field(True, description="固定为 True")
+    matched_plan_ids: list[int] = Field(default_factory=list, description="命中的预案 ID")
+    matched_plan_names: list[str] = Field(default_factory=list, description="命中的预案名称")
+    included_self: bool = Field(
+        False, description="被点击的预案是否在命中列表里"
+    )
+    logs: list[AlarmLinkageLogOut] = Field(
+        default_factory=list, description="本次模拟新产生的联动日志"
+    )
 
 
 # ==================== Action Schema ====================

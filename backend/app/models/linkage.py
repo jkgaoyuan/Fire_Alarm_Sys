@@ -1,4 +1,4 @@
-from sqlalchemy import ForeignKey, String, Boolean, Integer, Text, DateTime, func
+from sqlalchemy import ForeignKey, String, Boolean, Integer, Text, DateTime, func, text
 from sqlalchemy.ext.asyncio import AsyncAttrs
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -25,6 +25,12 @@ class LinkagePlan(Base):
     trigger_alarm_type: Mapped[str | None] = mapped_column(String(20))
     actions: Mapped[list[dict]] = mapped_column(json_type(), default=list)
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # 允许模拟测试：关闭后该预案不参与任何演练告警（is_drill=True）的匹配。
+    # 列早在建表迁移里就有（xxx_linkage_tables.py:34），但模型与 schema 一直
+    # 没声明它 → 前端开关存不下来、也没人读，开关从落地起就是死的。
+    is_simulation_allowed: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default=text("true"), nullable=False
+    )
 
     # DEC-004: created_by
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))

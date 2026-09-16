@@ -6,16 +6,51 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from datetime import datetime
 from typing import Optional
 
 from app.core.dependencies import get_db, require_permission
 from app.models.linkage import AlarmLinkageLog
-from app.crud.linkage import alarm_linkage_log_crud
 from app.schemas.auth import ResponseModel as Response
 from app.schemas.linkage import AlarmLinkageLogOut, AlarmLinkageLogPagination
 
 router = APIRouter(tags=["Linkage Logs"])
+
+
+def _log_query():
+    """日志查询基座：预加载展示用的预案 / 目标设备 / 告警。
+
+    `_log_out` 会读这三个关系；不预加载的话，异步 session 里读关系会触发
+    隐式 IO（`MissingGreenlet`）——巡检域踩过同一个坑，那里也是 selectinload。
+    """
+    return select(AlarmLinkageLog).options(
+        selectinload(AlarmLinkageLog.plan),
+        selectinload(AlarmLinkageLog.target_device),
+        selectinload(AlarmLinkageLog.alarm),
+    )
+
+
+def _log_out(log: AlarmLinkageLog) -> AlarmLinkageLogOut:
+    """ORM → 响应，补上预案名 / 设备名 / 是否演练"""
+    return AlarmLinkageLogOut(
+        id=log.id,
+        alarm_id=log.alarm_id,
+        plan_id=log.plan_id,
+        plan_name=log.plan.plan_name if log.plan else None,
+        action_type=log.action_type,
+        target_device_id=log.target_device_id,
+        target_device_name=log.target_device.device_name if log.target_device else None,
+        status=log.status,
+        executed_at=log.executed_at,
+        completed_at=log.completed_at,
+        result_message=log.result_message,
+        is_simulation=log.is_simulation,
+        # 日志表没有 is_drill，取自关联告警；告警为空（历史模拟日志）即 False
+        is_drill=bool(log.alarm.is_drill) if log.alarm else False,
+        delay_seconds=log.delay_seconds,
+        created_at=log.created_at,
+    )
 
 
 @router.get(
@@ -43,7 +78,7 @@ async def get_alarm_linkage_logs(
     """
     skip = (page - 1) * page_size
     
-    stmt = select(AlarmLinkageLog).order_by(AlarmLinkageLog.created_at.desc())
+    stmt = _log_query().order_by(AlarmLinkageLog.created_at.desc())
     
     if alarm_id is not None:
         stmt = stmt.where(AlarmLinkageLog.alarm_id == alarm_id)
@@ -64,7 +99,7 @@ async def get_alarm_linkage_logs(
     stmt = stmt.offset(skip).limit(page_size)
     results = (await db.execute(stmt)).scalars().all()
     
-    items = [AlarmLinkageLogOut.model_validate(log) for log in results]
+    items = [_log_out(log) for log in results]
     
     # 统一响应信封（docs/plan/API_RESPONSE_FORMAT_SPECIFICATION.md）。
     # 此前直接返回裸 {items,total,...}，前端拦截器对两种形状都放行，
@@ -147,7 +182,8 @@ async def get_alarm_linkage_log_detail(
     db: AsyncSession = Depends(get_db)
 ):
     """获取单个日志详情"""
-    log = await alarm_linkage_log_crud.get(db, log_id)
+    # 不能用 crud.get：它不带 selectinload，_log_out 读关系会触发隐式 IO
+    log = (await db.execute(_log_query().where(AlarmLinkageLog.id == log_id))).scalar_one_or_none()
     if not log:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -156,5 +192,5 @@ async def get_alarm_linkage_log_detail(
     return Response(
         code=200,
         message="success",
-        data=AlarmLinkageLogOut.model_validate(log),
+        data=_log_out(log),
     )

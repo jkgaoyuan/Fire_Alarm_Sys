@@ -360,3 +360,247 @@ async def test_org_name_is_null_when_org_missing(client, db_session):
 
     assert resp.status_code == 200
     assert resp.json()["data"]["items"][0]["org_name"] is None
+
+
+# ==================== 模拟测试（走全链路） ====================
+#
+# 旧实现直接拿预案的 actions 循环执行，绕开 `_matches_alarm`，所以
+# 「这条预案会不会被触发」这个问题它答不了；且不建告警、不广播。
+# 现在改为生成演练告警交给引擎，下面钉住新的行为契约。
+
+SIM_PERMS = [
+    "linkage:view",
+    "linkage:create",
+    "linkage:update",
+    "linkage:simulate",
+    "alarm:view",  # TC-LP-015 要从报警中心确认演练告警的可见性
+]
+
+ALARM_TYPE = "fire"  # execute_action 会随机失败，统一打桩成确定结果
+ENGINE = "app.services.linkage_engine_service"
+
+
+def _stub_execute(monkeypatch, status="success", message="排烟风机已启动"):
+    async def fake(action, log, failure_rate=0.1):
+        return status, message
+
+    monkeypatch.setattr(f"{ENGINE}.execute_action", fake)
+
+
+async def _sim_env(client, db_session, name, *, with_device=True, plan_body=None):
+    """
+    建区域（+设备）+ 预案 + 授权用户，返回 (headers, plan_id, org, device)。
+
+    `with_device=False` 用于构造「本区域没有设备」这个分支。
+    """
+    from tests.device_helpers import make_device
+
+    org = await _org(db_session, f"模拟区-{name}")
+    device = await make_device(db_session, org_id=org.id) if with_device else None
+
+    user = await create_user_with_perms(db_session, name, SIM_PERMS)
+    headers = auth_headers(user)
+
+    body = {
+        "plan_name": f"模拟预案-{name}",
+        "org_id": org.id,
+        "actions": [{"action_type": "start_exhaust", "params": {}}],
+    }
+    body.update(plan_body or {})
+
+    resp = await client.post(LIST_URL, json=body, headers=headers)
+    assert resp.status_code in (200, 201), resp.text
+    return headers, resp.json()["data"]["id"], org, device
+
+
+@pytest.mark.asyncio
+async def test_simulate_creates_drill_alarm_through_engine(client, db_session, monkeypatch):
+    """
+    TC-LP-014: 模拟测试生成演练告警，并按真实规则跑通引擎。
+
+    旧实现不建告警、不匹配、不广播，只把预案的动作跑一遍就报成功——
+    连 `org_id` 配错都发现不了。新实现必须满足：
+    产出一条 `is_drill=True` 的告警、`included_self` 为真、日志状态是成功。
+    """
+    _stub_execute(monkeypatch)
+    headers, plan_id, _org_obj, device = await _sim_env(client, db_session, "basic")
+
+    resp = await client.post(f"{LIST_URL}/{plan_id}/simulate", headers=headers)
+    body = resp.json()
+
+    assert resp.status_code == 200, resp.text
+    data = body["data"]
+    assert data["is_drill"] is True
+    assert data["alarm_type"] == "fire"
+    assert data["device_id"] == device.id
+    assert data["included_self"] is True, (
+        f"模拟了这条预案本身，它却没在命中列表里：{data['matched_plan_ids']}"
+    )
+    assert plan_id in data["matched_plan_ids"]
+    assert len(data["logs"]) == 1
+    assert data["logs"][0]["status"] == "success", (
+        f"动作成功却被记成 {data['logs'][0]['status']}：{data['logs'][0]['result_message']}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_simulate_alarm_is_visible_as_drill(client, db_session, monkeypatch):
+    """
+    TC-LP-015: 演练告警确实落到了 alarms 表，且按既有约定只在「含演练」时可见。
+
+    进统计与应急升级由既有代码保证（`statistics_service` / `emergency_service`
+    都过滤 `is_drill`），这里只钉住「报警中心按约定隐藏 / 开筛选可见」，
+    以及它带着 `is_drill` 标记，前端据此显示「演练」标签。
+    """
+    _stub_execute(monkeypatch)
+    headers, plan_id, _org_obj, _device = await _sim_env(client, db_session, "visible")
+
+    sim = await client.post(f"{LIST_URL}/{plan_id}/simulate", headers=headers)
+    alarm_id = sim.json()["data"]["alarm_id"]
+
+    hidden = await client.get("/api/v1/alarms", headers=headers)
+    assert alarm_id not in [a["id"] for a in hidden.json()["data"]["items"]], (
+        "演练告警不该出现在默认的报警列表里"
+    )
+
+    shown = await client.get("/api/v1/alarms?include_drill=true", headers=headers)
+    item = next(a for a in shown.json()["data"]["items"] if a["id"] == alarm_id)
+    assert item["is_drill"] is True
+
+
+@pytest.mark.asyncio
+async def test_simulate_rejected_when_plan_disabled(client, db_session, monkeypatch):
+    """TC-LP-016: 预案关了「允许模拟测试」时，点它自己的模拟按钮要被明确拒绝"""
+    _stub_execute(monkeypatch)
+    headers, plan_id, _org_obj, _device = await _sim_env(client, db_session, "disabled")
+
+    await client.put(
+        f"{LIST_URL}/{plan_id}", json={"is_simulation_allowed": False}, headers=headers
+    )
+
+    resp = await client.post(f"{LIST_URL}/{plan_id}/simulate", headers=headers)
+
+    assert resp.status_code == 400
+    assert "模拟测试" in resp.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_simulation_switch_persists(client, db_session):
+    """
+    TC-LP-017: 「允许模拟测试」开关必须能存能读。
+
+    该字段此前既不在 ORM 模型也不在 schema 里 —— 前端开关提交后被 Pydantic
+    静默丢弃，列表也从不返回它，开关从落地起就是死的。
+    """
+    headers, plan_id, _org_obj, _device = await _sim_env(client, db_session, "persist")
+
+    listed = await client.get(LIST_URL, headers=headers)
+    item = next(p for p in listed.json()["data"]["items"] if p["id"] == plan_id)
+    assert item["is_simulation_allowed"] is True, "默认应为允许"
+
+    await client.put(
+        f"{LIST_URL}/{plan_id}", json={"is_simulation_allowed": False}, headers=headers
+    )
+
+    listed = await client.get(LIST_URL, headers=headers)
+    item = next(p for p in listed.json()["data"]["items"] if p["id"] == plan_id)
+    assert item["is_simulation_allowed"] is False, "关掉后必须读得回来"
+
+
+@pytest.mark.asyncio
+async def test_simulate_rejected_without_device_in_org(client, db_session, monkeypatch):
+    """
+    TC-LP-018: 区域内没有设备时明确报错，而不是静默什么都不发生。
+
+    演练告警必须挂在真实设备上（`raise_alarm` 的 device 必填，且 org_id 从它
+    快照），而预案匹配比的正是 `alarm.org_id == plan.org_id`。
+    """
+    _stub_execute(monkeypatch)
+    headers, plan_id, _org_obj, _device = await _sim_env(
+        client, db_session, "nodevice", with_device=False
+    )
+
+    resp = await client.post(f"{LIST_URL}/{plan_id}/simulate", headers=headers)
+
+    assert resp.status_code == 400
+    assert "设备" in resp.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_simulate_refuses_to_reuse_real_alarm(client, db_session, monkeypatch):
+    """
+    TC-LP-019: 设备上已有未处理的真实告警时，必须 409 而不是拿它当演练跑。
+
+    `raise_alarm` 按 (device_id, alarm_type, 未收敛状态) 去重，**不看 is_drill**。
+    若不显式处理这个分支，模拟会复用那条真实火警，等于对着真火警做演练。
+    """
+    from app.services.alarm_service import raise_alarm
+
+    _stub_execute(monkeypatch)
+    headers, plan_id, _org_obj, device = await _sim_env(client, db_session, "realalarm")
+
+    real, created = await raise_alarm(db_session, device, ALARM_TYPE)
+    await db_session.commit()
+    assert created
+
+    resp = await client.post(f"{LIST_URL}/{plan_id}/simulate", headers=headers)
+
+    assert resp.status_code == 409, resp.text
+    assert str(real.id) in resp.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_simulate_is_idempotent_on_repeat(client, db_session, monkeypatch):
+    """TC-LP-020: 重复点击复用同一演练告警，不会堆出一串告警行"""
+    _stub_execute(monkeypatch)
+    headers, plan_id, _org_obj, _device = await _sim_env(client, db_session, "repeat")
+
+    first = await client.post(f"{LIST_URL}/{plan_id}/simulate", headers=headers)
+    second = await client.post(f"{LIST_URL}/{plan_id}/simulate", headers=headers)
+
+    assert first.status_code == second.status_code == 200
+    assert first.json()["data"]["alarm_id"] == second.json()["data"]["alarm_id"]
+    # 第二轮只回报本次新产生的日志，不复述上一轮的
+    assert len(second.json()["data"]["logs"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_simulate_rejects_unmatchable_trigger_type(client, db_session, monkeypatch):
+    """
+    TC-LP-021: 触发类型为 fault/shield 的预案，模拟时明确报错。
+
+    引擎入口只对 fire/pre_fire 启动（`linkage_engine_service.py`），但表单的
+    「触发报警类型」允许选「故障」「屏蔽」——这类预案是死配置，永远不会被触发。
+    旧实现会开开心心地跑一遍动作并报成功，用户根本发现不了。
+    """
+    _stub_execute(monkeypatch)
+    headers, plan_id, _org_obj, _device = await _sim_env(
+        client, db_session, "faulttype", plan_body={"trigger_alarm_type": "fault"}
+    )
+
+    resp = await client.post(f"{LIST_URL}/{plan_id}/simulate", headers=headers)
+
+    assert resp.status_code == 400
+    assert "fault" in resp.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_simulate_rejects_contradictory_trigger_config(client, db_session, monkeypatch):
+    """
+    TC-LP-022: 「火灾类型」与「触发报警类型」互相矛盾时明确报错。
+
+    匹配要求两者**同时**等于 alarm_type，所以 fire_type=fire +
+    trigger_alarm_type=pre_fire 这类配置没有任何报警能同时满足。
+    """
+    _stub_execute(monkeypatch)
+    headers, plan_id, _org_obj, _device = await _sim_env(
+        client,
+        db_session,
+        "contradict",
+        plan_body={"fire_type": "fire", "trigger_alarm_type": "pre_fire"},
+    )
+
+    resp = await client.post(f"{LIST_URL}/{plan_id}/simulate", headers=headers)
+
+    assert resp.status_code == 400
+    assert "不一致" in resp.json()["message"]

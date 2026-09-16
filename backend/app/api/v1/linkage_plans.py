@@ -11,10 +11,11 @@ from typing import Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from app.core.dependencies import get_db, require_permission, get_current_active_user
+from app.models.device import Device
 from app.models.linkage import LinkagePlan, AlarmLinkageLog
 from app.models.user import User
 from app.schemas.auth import ResponseModel as Response
@@ -25,12 +26,17 @@ from app.schemas.linkage import (
     LinkagePlanPagination,
     LinkageManualExecute,
     AlarmLinkageLogOut,
-    AlarmLinkageLogPagination,
     LinkageExecuteResult,
+    LinkageSimulateResult,
 )
 from app.crud.linkage import linkage_plan_crud, alarm_linkage_log_crud
+from app.services.alarm_service import raise_alarm
 from app.services.linkage_engine_service import linkage_engine
 from app.services.linkage_executor import execute_action
+
+# 引擎入口 `on_alarm_created` 只对这两类报警启动（见 linkage_engine_service.py），
+# 模拟必须挑其中一种，否则构造出来的告警根本不会被任何预案匹配。
+SIMULATABLE_ALARM_TYPES = ("fire", "pre_fire")
 
 router = APIRouter(tags=["Linkage Plans"])
 
@@ -54,6 +60,7 @@ def _plan_out(plan: LinkagePlan) -> LinkagePlanOut:
         trigger_alarm_type=plan.trigger_alarm_type,
         actions=plan.actions,
         is_enabled=plan.is_enabled,
+        is_simulation_allowed=plan.is_simulation_allowed,
         created_by=plan.created_by,
         created_at=plan.created_at,
         updated_at=plan.updated_at,
@@ -80,6 +87,74 @@ async def _refresh_with_org(db: AsyncSession, plan: LinkagePlan) -> None:
     """
     await db.refresh(plan)
     await db.refresh(plan, ["organization"])
+
+
+def _resolve_simulate_alarm_type(plan: LinkagePlan) -> str:
+    """
+    挑一个**能让这条预案命中**的报警类型来模拟。
+
+    规则与 `LinkageEngineService._matches_alarm` 对齐：`fire_type` 与
+    `trigger_alarm_type` 都会被拿去和 `alarm.alarm_type` 比，所以两者同时设置
+    且不同时，**没有任何报警能满足**。这类自相矛盾的配置在这里直接报错，
+    而不是构造一条必然匹配不上的告警、让它静默地什么都不发生。
+    """
+    if (
+        plan.fire_type is not None
+        and plan.trigger_alarm_type is not None
+        and plan.fire_type != plan.trigger_alarm_type
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"预案的「火灾类型」({plan.fire_type}) 与「触发报警类型」"
+                f"({plan.trigger_alarm_type}) 不一致，而引擎要求两者同时成立，"
+                f"该预案不会被任何报警触发。请把其中一个改为「不限制」或改成相同取值。"
+            ),
+        )
+
+    alarm_type = plan.trigger_alarm_type or plan.fire_type or "fire"
+
+    if alarm_type not in SIMULATABLE_ALARM_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"预案的触发类型为「{alarm_type}」，但联动引擎只对 "
+                f"A 类火警(fire) 与预火灾(pre_fire) 启动，该预案不会被任何报警触发。"
+                f"请把触发类型改为这两者之一或「不限制」。"
+            ),
+        )
+
+    return alarm_type
+
+
+async def _pick_device_in_org(db: AsyncSession, org_id: int) -> Device:
+    """
+    在预案所属区域里挑一台设备承载演练告警。
+
+    `raise_alarm` 的 `device` 是必填的，且 `org_id` 从它快照
+    （alarm_service.py），而预案匹配比的正是 `alarm.org_id == plan.org_id` ——
+    所以「本区域没有设备」是个必须明确报错的分支，不能静默跳过。
+    """
+    stmt = (
+        select(Device)
+        .where(
+            Device.org_id == org_id,
+            Device.is_deleted.is_(False),
+            Device.status != "retired",
+        )
+        .order_by(Device.id)
+        .limit(1)
+    )
+    device = (await db.execute(stmt)).scalar_one_or_none()
+    if device is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"区域(id={org_id})下没有可用设备，无法模拟。"
+                f"演练告警必须挂在一台真实设备上——请先在该区域建档设备。"
+            ),
+        )
+    return device
 
 
 # ==================== 预案管理 ====================
@@ -284,61 +359,116 @@ async def toggle_linkage_plan_status(
 
 @router.post(
     "/{plan_id}/simulate",
-    response_model=Response[AlarmLinkageLogPagination],
-    summary="模拟触发预案",
+    response_model=Response[LinkageSimulateResult],
+    summary="模拟测试预案",
     dependencies=[Depends(require_permission("linkage:simulate"))]
 )
 async def simulate_linkage_trigger(
     plan_id: int,
     remark: Optional[str] = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_active_user),
 ):
     """
-    模拟触发预案（不生成真实告警，仅记录日志）
-    用于测试预案逻辑是否正确
+    模拟测试：生成一条**演练告警**，让预案按真实规则跑完整联动链路。
+
+    与旧实现的区别——旧实现直接拿预案的 actions 循环执行，绕开了
+    `LinkageEngineService._matches_alarm()`，因此它回答不了「这条预案到底会不会
+    被触发」：`org_id` / `fire_type` / `trigger_alarm_type` 配错也照样报成功，
+    而且不产生告警、不广播，报警中心与监控大屏都看不到任何痕迹。
+
+    现在是：在预案所属区域挑设备 → 建 `is_drill=True` 的真实告警 →
+    交给引擎匹配并执行 → 回报命中了哪些预案。演练告警不进统计
+    （statistics_service）、不触发应急升级（emergency_service），
+    但要「含演练」筛选才在报警中心可见（与既有约定一致）。
     """
-    plan = await linkage_plan_crud.get(db, plan_id)
+    plan = await _load_plan(db, plan_id)
     if not plan:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="预案不存在"
         )
-    
-    # 生成模拟日志（is_simulation=true）
-    logs = []
-    for action in plan.actions:
-        log = AlarmLinkageLog(
-            alarm_id=None,  # 模拟模式下为空
-            plan_id=plan.id,
-            action_type=action["action_type"],
-            target_device_id=action.get("target_device_id"),
-            status="pending",
-            is_simulation=True,
-            delay_seconds=action.get("delay_seconds", 0),
+
+    if not plan.is_simulation_allowed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="该预案已禁用模拟测试",
         )
-        db.add(log)
-        await db.flush()
-        
-        # 直接执行（简化流程）
-        result_status, result_message = await execute_action(action, log)
-        log.status = result_status
-        log.result_message = result_message
-        log.completed_at = datetime.now()
-        
-        logs.append(log)
-    
+
+    alarm_type = _resolve_simulate_alarm_type(plan)
+    device = await _pick_device_in_org(db, plan.org_id)
+
+    location = f"模拟测试：预案「{plan.plan_name}」"
+    if remark:
+        location = f"{location}；{remark}"
+
+    alarm, created = await raise_alarm(
+        db,
+        device,
+        alarm_type,
+        is_drill=True,
+        location_description=location,
+        created_by=user.id,
+    )
+
+    if not created:
+        # raise_alarm 按 (device_id, alarm_type, 未收敛状态) 去重，**且不看 is_drill**。
+        # 撞上真实告警时绝不能拿它当演练跑——那等于对着一次真火警做模拟。
+        if not alarm.is_drill:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"设备「{device.device_name}」上已有未处理的 {alarm_type} 告警"
+                    f"（id={alarm.id}），模拟测试不会复用真实告警。"
+                    f"请先处置该告警，或改用该区域的其它设备。"
+                ),
+            )
+        # 既有的是上次演练留下的 → 复用它，重复点击即幂等
+
     await db.commit()
-    
-    # 返回结果
-    items = [AlarmLinkageLogOut.model_validate(log) for log in logs]
+
+    # 只回报本次新产生的日志：复用演练告警时，库里还有上一轮的记录
+    before_id = (await db.execute(
+        select(func.max(AlarmLinkageLog.id)).where(AlarmLinkageLog.alarm_id == alarm.id)
+    )).scalar() or 0
+
+    # 同步 await 而非 create_task：调用方需要立刻知道命中了什么
+    await linkage_engine.on_alarm_created(db, alarm)
+
+    rows = (await db.execute(
+        select(AlarmLinkageLog)
+        .where(
+            AlarmLinkageLog.alarm_id == alarm.id,
+            AlarmLinkageLog.id > before_id,
+        )
+        .order_by(AlarmLinkageLog.id)
+    )).scalars().all()
+
+    matched_ids = sorted({log.plan_id for log in rows if log.plan_id is not None})
+
+    names: list[str] = []
+    if matched_ids:
+        name_rows = (await db.execute(
+            select(LinkagePlan.id, LinkagePlan.plan_name)
+            .where(LinkagePlan.id.in_(matched_ids))
+        )).all()
+        by_id = {r.id: r.plan_name for r in name_rows}
+        names = [by_id[i] for i in matched_ids if i in by_id]
+
     return Response(
         code=200,
         message="success",
-        data=AlarmLinkageLogPagination(
-            items=items,
-            total=len(items),
-            page=1,
-            page_size=len(items),
+        data=LinkageSimulateResult(
+            alarm_id=alarm.id,
+            alarm_type=alarm.alarm_type,
+            org_id=alarm.org_id,
+            device_id=device.id,
+            device_code=device.device_code,
+            is_drill=True,
+            matched_plan_ids=matched_ids,
+            matched_plan_names=names,
+            included_self=plan.id in matched_ids,
+            logs=[AlarmLinkageLogOut.model_validate(log) for log in rows],
         ),
     )
 
