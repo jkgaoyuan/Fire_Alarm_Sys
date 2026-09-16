@@ -47,7 +47,7 @@
         <el-table-column prop="plan_name" label="预案名称" min-width="150" />
         <el-table-column label="关联区域" min-width="150">
           <template #default="{ row }">
-            {{ row.organization?.org_name || '-' }}
+            {{ row.org_name || '-' }}
           </template>
         </el-table-column>
         <el-table-column prop="fire_type" label="火灾类型" width="120">
@@ -126,7 +126,7 @@
       <div v-if="currentPlan">
         <el-descriptions :column="1" border>
           <el-descriptions-item label="预案名称">{{ currentPlan.plan_name }}</el-descriptions-item>
-          <el-descriptions-item label="关联区域">{{ currentPlan.organization?.org_name || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="关联区域">{{ currentPlan.org_name || '-' }}</el-descriptions-item>
           <el-descriptions-item label="火灾类型">
             <el-tag v-if="currentPlan.fire_type === 'fire'" type="danger">A 类火警</el-tag>
             <el-tag v-else-if="currentPlan.fire_type === 'pre_fire'" type="warning">预火灾</el-tag>
@@ -155,6 +155,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import PlanForm from './components/PlanForm.vue'
 import * as LinkageApi from '@/api/linkage'
+import { getOrganizations } from '@/api/organization'
 
 // 筛选条件
 const filters = reactive({
@@ -181,10 +182,24 @@ const formRef = ref(null)
 const drawerVisible = ref(false)
 const currentPlan = ref(null)
 
-// 组织树（简化为数组）
-const orgTree = ref([
-  { id: 1, org_name: '消防管理中心' },
-])
+// 关联区域下拉数据。原先是写死的 `[{ id: 1, org_name: '消防管理中心' }]`，
+// 用户在下拉里选不到自己配置的区域；设备档案/报警中心等页面都走组织接口。
+const orgTree = ref([])
+
+async function loadOrgs() {
+  try {
+    const res = await getOrganizations()
+    if (res.code === 200 && res.data) {
+      orgTree.value = res.data
+    } else {
+      ElMessage.error(res.message || '获取区域列表失败')
+    }
+  } catch (error) {
+    console.error('加载区域列表失败:', error)
+    // 区域接口挂了不该让整个列表页白屏，筛选框留空降级即可
+    ElMessage.error('获取区域列表失败')
+  }
+}
 
 // 加载预案列表
 async function loadPlans() {
@@ -339,6 +354,7 @@ function formatActionParams(params) {
 
 onMounted(() => {
   loadPlans()
+  loadOrgs()
 })
 </script>
 

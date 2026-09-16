@@ -44,10 +44,14 @@ class LinkagePlanUpdate(BaseModel):
 
 class LinkagePlanOut(BaseModel):
     """预案响应"""
-    
+
     id: int
     plan_name: str
     org_id: int
+    # 关联区域名。前端表格与详情抽屉都要显示，只给 org_id 的话前端得再查一次
+    # 组织接口才能显示名字。口径与 device/inspection/user 等模块一致：扁平字段，
+    # 由端点在 ORM → schema 时补上（见 linkage_plans._plan_out）。
+    org_name: Optional[str] = None
     fire_type: Optional[str] = None
     trigger_device_type_id: Optional[int] = None
     trigger_alarm_type: Optional[str] = None

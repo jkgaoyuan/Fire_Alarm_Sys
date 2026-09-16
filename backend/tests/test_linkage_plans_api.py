@@ -16,6 +16,7 @@
 
 import pytest
 
+from app.models.organization import Organization
 from tests.auth_helpers import auth_headers, create_user_with_perms
 
 LIST_URL = "/api/v1/linkage-plans"
@@ -235,3 +236,127 @@ async def test_execute_result_is_nested_not_flattened(client, db_session):
     assert body["message"] == "success"  # 信封自己的 message
     assert body["data"]["message"].startswith("成功执行")  # 业务 message 在 data 里
     assert isinstance(body["data"]["logs"], list)
+
+
+# ==================== 关联区域名（org_name） ====================
+
+async def _org(db_session, name="1F 大厅"):
+    """建一个真实区域，用于断言响应里带出的是它的名字"""
+    org = Organization(org_name=name, org_type="zone")
+    db_session.add(org)
+    await db_session.commit()
+    await db_session.refresh(org)
+    return org
+
+
+async def _org_user(db_session, name="lp_orgname"):
+    return await create_user_with_perms(
+        db_session,
+        name,
+        ["linkage:view", "linkage:create", "linkage:update"],
+    )
+
+
+@pytest.mark.asyncio
+async def test_list_returns_org_name(client, db_session):
+    """
+    TC-LP-010: 预案列表必须带出关联区域名。
+
+    不修会怎样：`LinkagePlanOut` 只有 `org_id`，而前端 `Plan.vue:50` 读的是
+    `row.organization?.org_name` —— 字段对不上，取到 undefined 被 `|| '-'`
+    兜底，**「关联区域」列恒为 `-` 且不报错**。用户配置了也看不见。
+    """
+    org = await _org(db_session)
+    user = await _org_user(db_session)
+    headers = auth_headers(user)
+
+    await client.post(
+        LIST_URL,
+        json={"plan_name": "带区域预案", "org_id": org.id, "actions": []},
+        headers=headers,
+    )
+
+    resp = await client.get(LIST_URL, headers=headers)
+    item = resp.json()["data"]["items"][0]
+
+    assert item["org_id"] == org.id
+    assert item["org_name"] == "1F 大厅", f"区域名没带出来：{item}"
+
+
+@pytest.mark.asyncio
+async def test_detail_returns_org_name(client, db_session):
+    """TC-LP-011: 详情（抽屉里那行）同样要带区域名"""
+    org = await _org(db_session, "2F 走廊")
+    user = await _org_user(db_session, "lp_orgname2")
+    headers = auth_headers(user)
+
+    created = await client.post(
+        LIST_URL,
+        json={"plan_name": "详情预案", "org_id": org.id, "actions": []},
+        headers=headers,
+    )
+    plan_id = created.json()["data"]["id"]
+
+    resp = await client.get(f"{LIST_URL}/{plan_id}", headers=headers)
+
+    assert resp.status_code == 200
+    assert resp.json()["data"]["org_name"] == "2F 走廊"
+
+
+@pytest.mark.asyncio
+async def test_create_returns_org_name_immediately(client, db_session):
+    """
+    TC-LP-012: 创建/更新/切换状态三个端点也返回 `LinkagePlanOut`，
+    提交后前端拿它刷新行；若只有查询端点带 org_name，保存后那一行会闪回 `-`。
+
+    不修会怎样：新建后 `db.refresh(plan)` 只刷新了列，`organization` 关系未加载，
+    org_name 取不到。
+    """
+    org = await _org(db_session, "3F 机房")
+    user = await _org_user(db_session, "lp_orgname3")
+    headers = auth_headers(user)
+
+    created = await client.post(
+        LIST_URL,
+        json={"plan_name": "创建预案", "org_id": org.id, "actions": []},
+        headers=headers,
+    )
+    plan_id = created.json()["data"]["id"]
+    assert created.json()["data"]["org_name"] == "3F 机房"
+
+    updated = await client.put(
+        f"{LIST_URL}/{plan_id}",
+        json={"plan_name": "改过名"},
+        headers=headers,
+    )
+    assert updated.json()["data"]["org_name"] == "3F 机房"
+
+    toggled = await client.post(
+        f"{LIST_URL}/{plan_id}/toggle",
+        json={"is_enabled": False},
+        headers=headers,
+    )
+    assert toggled.json()["data"]["org_name"] == "3F 机房"
+
+
+@pytest.mark.asyncio
+async def test_org_name_is_null_when_org_missing(client, db_session):
+    """
+    TC-LP-013: 区域被删/查不到时 org_name 为 null，而不是 500。
+
+    SQLite 测试库不校验外键，可以直接写入悬空的 org_id——生产库删组织时
+    也可能留下引用，端点不能因此炸掉。
+    """
+    user = await _org_user(db_session, "lp_orgname4")
+    headers = auth_headers(user)
+
+    await client.post(
+        LIST_URL,
+        json={"plan_name": "悬空区域预案", "org_id": 987654, "actions": []},
+        headers=headers,
+    )
+
+    resp = await client.get(LIST_URL, headers=headers)
+
+    assert resp.status_code == 200
+    assert resp.json()["data"]["items"][0]["org_name"] is None

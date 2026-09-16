@@ -188,6 +188,7 @@
 <script setup lang="jsx">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { getOrganizations } from '@/api/organization'
 
 const props = defineProps({
   plan: {
@@ -201,10 +202,20 @@ const emit = defineEmits(['submit', 'cancel'])
 // 表单引用
 const formRef = ref(null)
 
-// 组织树（简化）
-const orgTree = ref([
-  { id: 1, org_name: '消防管理中心' },
-])
+// 关联区域下拉数据。原先是写死的 `[{ id: 1, org_name: '消防管理中心' }]`，
+// 新建预案时只能选这一个不存在的区域，存下来的 org_id 自然对不上真实组织。
+const orgTree = ref([])
+
+async function loadOrgs() {
+  try {
+    const res = await getOrganizations()
+    if (res.code === 200 && res.data) {
+      orgTree.value = res.data
+    }
+  } catch (error) {
+    console.error('加载区域列表失败:', error)
+  }
+}
 
 // 动作类型
 const actionTypes = [
@@ -244,6 +255,7 @@ const paramsJson = ref('')
 
 // 初始化表单
 onMounted(() => {
+  loadOrgs()
   if (props.plan) {
     // 编辑模式
     Object.assign(formData, props.plan)

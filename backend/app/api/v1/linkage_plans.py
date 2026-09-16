@@ -12,6 +12,7 @@ from typing import Optional
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.core.dependencies import get_db, require_permission, get_current_active_user
 from app.models.linkage import LinkagePlan, AlarmLinkageLog
@@ -32,6 +33,53 @@ from app.services.linkage_engine_service import linkage_engine
 from app.services.linkage_executor import execute_action
 
 router = APIRouter(tags=["Linkage Plans"])
+
+
+def _plan_out(plan: LinkagePlan) -> LinkagePlanOut:
+    """
+    ORM → 响应，补上 `org_name`。
+
+    `organization` 关系必须已被预加载（`_load_plan` 的 selectinload，或写操作后的
+    `db.refresh(plan, ["organization"])`）。异步 session 里读未加载的关系会触发
+    隐式 IO，所以这里显式取值，而不是交给 `model_validate` 去碰。
+    区域查不到（悬空 org_id）时给 None，不让整条记录挂掉。
+    """
+    return LinkagePlanOut(
+        id=plan.id,
+        plan_name=plan.plan_name,
+        org_id=plan.org_id,
+        org_name=plan.organization.org_name if plan.organization else None,
+        fire_type=plan.fire_type,
+        trigger_device_type_id=plan.trigger_device_type_id,
+        trigger_alarm_type=plan.trigger_alarm_type,
+        actions=plan.actions,
+        is_enabled=plan.is_enabled,
+        created_by=plan.created_by,
+        created_at=plan.created_at,
+        updated_at=plan.updated_at,
+    )
+
+
+async def _load_plan(db: AsyncSession, plan_id: int) -> LinkagePlan | None:
+    """按 ID 取预案，并预加载 organization（_plan_out 依赖它已就绪）"""
+    stmt = (
+        select(LinkagePlan)
+        .options(selectinload(LinkagePlan.organization))
+        .where(LinkagePlan.id == plan_id)
+    )
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
+async def _refresh_with_org(db: AsyncSession, plan: LinkagePlan) -> None:
+    """
+    提交后重新加载预案，连带 organization —— 否则 `_plan_out` 取不到区域名。
+
+    两步是刻意的：commit 会让所有属性过期，只按名刷新 organization 的话，
+    其余列仍是过期状态，`_plan_out` 读它们会触发隐式 IO（异步下不可靠）。
+    先整体刷新列，再单独补关系。
+    """
+    await db.refresh(plan)
+    await db.refresh(plan, ["organization"])
 
 
 # ==================== 预案管理 ====================
@@ -74,10 +122,15 @@ async def get_linkage_plans(
     total = (await db.execute(count_stmt)).scalar_one_or_none()
     
     # 获取数据
-    stmt = stmt.order_by(LinkagePlan.created_at.desc()).offset(skip).limit(page_size)
+    stmt = (
+        stmt.options(selectinload(LinkagePlan.organization))
+        .order_by(LinkagePlan.created_at.desc())
+        .offset(skip)
+        .limit(page_size)
+    )
     results = (await db.execute(stmt)).scalars().all()
-    
-    items = [LinkagePlanOut.model_validate(plan) for plan in results]
+
+    items = [_plan_out(plan) for plan in results]
     
     return Response(
         code=200,
@@ -99,7 +152,7 @@ async def get_linkage_plans(
 )
 async def get_linkage_plan_detail(plan_id: int, db: AsyncSession = Depends(get_db)):
     """获取单个预案详情"""
-    plan = await linkage_plan_crud.get(db, plan_id)
+    plan = await _load_plan(db, plan_id)
     if not plan:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -108,7 +161,7 @@ async def get_linkage_plan_detail(plan_id: int, db: AsyncSession = Depends(get_d
     return Response(
         code=200,
         message="success",
-        data=LinkagePlanOut.model_validate(plan),
+        data=_plan_out(plan),
     )
 
 
@@ -128,11 +181,11 @@ async def create_linkage_plan(
     plan = LinkagePlan(**data.model_dump(), created_by=user.id)
     db.add(plan)
     await db.commit()
-    await db.refresh(plan)
+    await _refresh_with_org(db, plan)
     return Response(
         code=200,
         message="success",
-        data=LinkagePlanOut.model_validate(plan),
+        data=_plan_out(plan),
     )
 
 
@@ -158,13 +211,13 @@ async def update_linkage_plan(
     update_data = data.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(plan, key, value)
-    
+
     await db.commit()
-    await db.refresh(plan)
+    await _refresh_with_org(db, plan)
     return Response(
         code=200,
         message="success",
-        data=LinkagePlanOut.model_validate(plan),
+        data=_plan_out(plan),
     )
 
 
@@ -220,12 +273,12 @@ async def toggle_linkage_plan_status(
     data = data or {}
     plan.is_enabled = data.get("is_enabled", not plan.is_enabled)
     await db.commit()
-    await db.refresh(plan)
-    
+    await _refresh_with_org(db, plan)
+
     return Response(
         code=200,
         message="success",
-        data=LinkagePlanOut.model_validate(plan),
+        data=_plan_out(plan),
     )
 
 
