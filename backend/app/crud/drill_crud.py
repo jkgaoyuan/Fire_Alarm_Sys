@@ -15,6 +15,42 @@ from app.models.drill import DrillEvent, DrillEvaluation, DrillStatus, DrillType
 from app.schemas.drill import EvaluationItem
 
 
+# ==================== 参与人员归一 ====================
+
+DEFAULT_PARTICIPANT_ROLE = "参与者"
+
+
+def _normalize_participants(
+    participants: Optional[List[Dict[str, Any]]] = None,
+    participant_user_ids: Optional[List[int]] = None,
+) -> Optional[List[Dict[str, Any]]]:
+    """把两种入参形态归一成存储形状 `{user_id, role, sign_in_at}`。
+
+    - `participants`（新，逐人带 role）优先；缺失则回退 `participant_user_ids`（旧，全部「参与者」）
+    - 两者都为 `None` 时返回 `None` —— 调用方据此区分「没传」与「传了空列表」，
+      这个区别在 update 里很重要：没传 = 不动，传 `[]` = 清空
+
+    元素须为 `dict`（端点负责把 Pydantic 模型 `model_dump()` 后再传）。
+    全仓库**只有这一处**决定 role 的默认值 —— 此前 `create` 与 `update` 各自
+    硬编码了一份「参与者」，前端填的角色必然被丢弃。
+    """
+    if participants is not None:
+        return [
+            {
+                "user_id": p["user_id"],
+                "role": p.get("role") or DEFAULT_PARTICIPANT_ROLE,
+                "sign_in_at": None,
+            }
+            for p in participants
+        ]
+    if participant_user_ids is not None:
+        return [
+            {"user_id": uid, "role": DEFAULT_PARTICIPANT_ROLE, "sign_in_at": None}
+            for uid in participant_user_ids
+        ]
+    return None
+
+
 # ==================== DrillEvent CRUD ====================
 
 class DrillEventCRUD:
@@ -40,13 +76,15 @@ class DrillEventCRUD:
         planned_at: Optional[datetime] = None,
         location: Optional[str] = None,
         participant_user_ids: Optional[List[int]] = None,
+        participants_input: Optional[List[Dict[str, Any]]] = None,
         status: DrillStatus = DrillStatus.planned,
     ) -> DrillEvent:
-        """创建演练事件"""
-        participants = [
-            {"user_id": uid, "role": "参与者", "sign_in_at": None}
-            for uid in (participant_user_ids or [])
-        ]
+        """创建演练事件
+
+        `participants_input`（带 role）优先于 `participant_user_ids`（旧，全部「参与者」）。
+        见 `_normalize_participants`。
+        """
+        participants = _normalize_participants(participants_input, participant_user_ids) or []
         drill = DrillEvent(
             drill_name=drill_name,
             drill_type=drill_type.value if isinstance(drill_type, DrillType) else drill_type,
@@ -103,12 +141,19 @@ class DrillEventCRUD:
         actual_end_at: Optional[datetime] = None,
         location: Optional[str] = None,
         participant_user_ids: Optional[List[int]] = None,
+        participants_input: Optional[List[Dict[str, Any]]] = None,
         status: Optional[DrillStatus] = None,
         summary: Optional[str] = None,
         photos: Optional[List[Dict[str, Any]]] = None,
         videos: Optional[List[Dict[str, Any]]] = None,
     ) -> Optional[DrillEvent]:
-        """更新演练事件（仅更新显式传入的字段）"""
+        """更新演练事件（仅更新显式传入的字段）
+
+        ⚠️ **整体覆盖语义**：传入参与人员时会**全量替换** `drill.participants`，
+        原有的 `sign_in_at`（签到记录）会被一并清零。这是既存行为，本次未改变，
+        但角色变为可编辑后，用户会更频繁地编辑这一栏，撞上的概率上升。
+        """
+
         drill = await self.get(db, drill_id)
         if not drill:
             return None
@@ -133,11 +178,11 @@ class DrillEventCRUD:
             drill.photos = photos
         if videos is not None:
             drill.videos = videos
-        if participant_user_ids is not None:
-            drill.participants = [
-                {"user_id": uid, "role": "参与者", "sign_in_at": None}
-                for uid in participant_user_ids
-            ]
+        # 只有显式传了参与人员才动它。normalized 为 None 表示两个字段都没传 ——
+        # 与「传了空列表表示清空」是两回事，不能合并。
+        normalized = _normalize_participants(participants_input, participant_user_ids)
+        if normalized is not None:
+            drill.participants = normalized
 
         db.add(drill)
         await db.commit()

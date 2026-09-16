@@ -50,6 +50,19 @@ export function deleteDrill(id) {
   })
 }
 
+// 参与人员候选人（供表单与详情页的人员选择器使用）
+//
+// 刻意调演练域自己的端点而**不是** `GET /users`：后者由 `system:user` 守卫，
+// 而值班员/维保员持有 `drill:execute` 却没有 `system:user`（实测 403），
+// 沿用会让这两个角色在「执行演练时加人」这一步整个断掉。
+// 返回精简字段 [{id, username, real_name, role_names}]，不含 phone/email。
+export function getDrillParticipantCandidates() {
+  return request({
+    url: '/drills/participant-candidates',
+    method: 'get',
+  })
+}
+
 // ==================== 演练执行 ====================
 
 // 开始执行演练（planned → ongoing）

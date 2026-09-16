@@ -30,14 +30,35 @@ class DrillStatus(str, Enum):
 
 # ==================== 请求体 Schema ====================
 
+
+class ParticipantInput(BaseModel):
+    """参与人员入参 —— 携带每人的角色
+
+    此前前端界面上收集了角色，提交时却只发 `participant_user_ids`，
+    后端 `drill_crud.create/update` 把所有人写死 `"role": "参与者"`，
+    **填了角色会被无声丢弃**。本类型补通这条链路。
+    """
+
+    user_id: int = Field(..., description="用户 ID")
+    role: Optional[str] = Field("参与者", max_length=50, description="参与角色")
+
+
 class DrillEventCreate(BaseModel):
     """创建演练事件请求体"""
-    
+
     drill_name: str = Field(..., max_length=100, description="演练名称")
     drill_type: DrillType = Field(..., description="演练类型")
     planned_at: Optional[datetime] = Field(None, description="计划时间")
     location: Optional[str] = Field(None, max_length=255, description="演练地点")
-    participant_user_ids: Optional[List[int]] = Field(None, description="参与人员用户 ID 列表")
+    participant_user_ids: Optional[List[int]] = Field(
+        None, description="参与人员用户 ID 列表（旧字段，等价于全部 role='参与者'）"
+    )
+    # 前端只发本字段。与 participant_user_ids 同时给出时**以本字段为准**。
+    # 保留旧字段是因为 tests/test_drill_crud.py 的 fixture 与 test_create_drill
+    # 仍在用它，删掉只会无谓扩大改动面。
+    participants: Optional[List[ParticipantInput]] = Field(
+        None, description="参与人员 [{user_id, role}]，role 缺省为「参与者」"
+    )
     status: Optional[DrillStatus] = Field(DrillStatus.planned, description="初始状态")
 
 
@@ -51,6 +72,8 @@ class DrillEventUpdate(BaseModel):
     actual_end_at: Optional[datetime] = None
     location: Optional[str] = Field(None, max_length=255)
     participant_user_ids: Optional[List[int]] = None
+    # 同 create：给了就用它的 role，否则回退旧字段（全部「参与者」）
+    participants: Optional[List[ParticipantInput]] = None
     status: Optional[DrillStatus] = None
     summary: Optional[str] = Field(None, description="现场总结记录")
     photos: Optional[List[Dict[str, str]]] = Field(None, description="现场照片 [{url, caption}]")
@@ -58,10 +81,31 @@ class DrillEventUpdate(BaseModel):
 
 
 class ParticipantItem(BaseModel):
-    """参与人员项（用于演练记录）"""
+    """参与人员项（用于演练记录）
+
+    **存储形状只有 user_id / role / sign_in_at**（PRD 的 participants JSONB 形状）。
+    `user_name` 是**响应期补充**的字段，绝不写回 JSONB ——
+    `DrillEvent` 没有任何 relationship，姓名由 `drills._participants_out()` 现查。
+    用户已删除时留 `None`，前端回退显示 `#<id>`。
+    """
     user_id: int = Field(..., description="用户 ID")
     role: str = Field(..., max_length=50, description="参与角色")
     sign_in_at: Optional[datetime] = Field(None, description="签到时间")
+    user_name: Optional[str] = Field(None, description="用户姓名（响应期补充，不落库）")
+
+
+class DrillCandidateUser(BaseModel):
+    """演练参与人员候选人（下拉框用）
+
+    刻意**不复用 `UserOut`**（`app/schemas/user.py:20`）：那个含 phone / email /
+    data_scope / status / created_at，而这个端点由 `drill:execute` 守卫，
+    值班员与维保员都持有 —— 没必要把联系方式与数据范围一并给他们。
+    """
+
+    id: int
+    username: str
+    real_name: Optional[str] = None
+    role_names: List[str] = Field(default=[], description="角色名列表，供下拉框右侧展示")
 
 
 class DrillParticipationRequest(BaseModel):
@@ -209,6 +253,7 @@ __all__ = [
     # 请求体
     "DrillEventCreate",
     "DrillEventUpdate",
+    "ParticipantInput",
     "DrillParticipationRequest",
     "DrillEvaluationCreate",
     "EvaluationItem",
@@ -219,6 +264,7 @@ __all__ = [
     "DrillEvaluationLite",
     "DrillEvaluationResponse",
     "ParticipantItem",
+    "DrillCandidateUser",
     "EvaluationItem",
     # 分页
     "DrillEventPagination",

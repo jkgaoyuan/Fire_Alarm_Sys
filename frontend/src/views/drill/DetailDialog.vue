@@ -73,7 +73,9 @@
         <PermissionButton permission="drill:execute" size="small" @click="openAddParticipant">添加人员</PermissionButton>
       </template>
       <el-table :data="participants" stripe>
-        <el-table-column prop="user_id" label="用户 ID" width="100" />
+        <el-table-column label="姓名" width="140">
+          <template #default="{ row }">{{ row.user_name || `#${row.user_id}` }}</template>
+        </el-table-column>
         <el-table-column prop="role" label="参与角色" min-width="150" />
         <el-table-column prop="sign_in_at" label="签到时间" width="180">
           <template #default="{ row }">{{ formatDate(row.sign_in_at) || '-' }}</template>
@@ -103,6 +105,38 @@
       <el-empty v-else description="暂无评估数据" />
     </el-card>
 
+    <!-- 添加参与人员：真弹窗。
+         此前用 `ElMessageBox.prompt` 填用户 ID + **原生 window.prompt()** 问角色 ——
+         原生 prompt 装不下 el-select，所以整段重写。
+         `append-to-body` 是因为它嵌在外层 el-dialog 里。 -->
+    <el-dialog v-model="addVisible" title="添加参与人员" width="460px" append-to-body>
+      <el-form label-width="80px">
+        <el-form-item label="人员">
+          <el-select
+            v-model="addForm.user_id"
+            placeholder="搜索并选择人员"
+            filterable
+            :loading="candidatesLoading"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="u in candidates"
+              :key="u.id"
+              :label="u.real_name || u.username"
+              :value="u.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="角色">
+          <el-input v-model="addForm.role" placeholder="如：指挥员、疏散员、操作员" maxlength="50" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="addVisible = false">取消</el-button>
+        <el-button type="primary" :loading="addSubmitting" @click="confirmAddParticipant">确定</el-button>
+      </template>
+    </el-dialog>
+
     <template #footer>关闭</template>
   </el-dialog>
 </template>
@@ -111,7 +145,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import PermissionButton from '@/components/PermissionButton.vue'
-import { getDrillDetail, executeDrill, completeDrill as apiCompleteDrill, cancelDrill as apiCancelDrill, addDrillParticipant, signInDrillParticipant } from '@/api/drill'
+import { getDrillDetail, executeDrill, completeDrill as apiCompleteDrill, cancelDrill as apiCancelDrill, addDrillParticipant, getDrillParticipantCandidates } from '@/api/drill'
 
 const props = defineProps({
   modelValue: Boolean,
@@ -250,25 +284,60 @@ function triggerCancelDrill() {
   }).catch(() => {})
 }
 
+// ==================== 添加参与人员 ====================
+
+const addVisible = ref(false)
+const addSubmitting = ref(false)
+const addForm = reactive({ user_id: null, role: '参与者' })
+
+// 候选人走演练域自己的端点（不是 GET /users —— 那个要 system:user，
+// 值班员/维保员持有 drill:execute 却没有，实测 403）。
+const candidates = ref([])
+const candidatesLoading = ref(false)
+
+async function loadCandidates() {
+  candidatesLoading.value = true
+  try {
+    const res = await getDrillParticipantCandidates()
+    candidates.value = res.data || []
+  } catch (err) {
+    console.error(err)
+    ElMessage.error('加载人员列表失败')
+  } finally {
+    candidatesLoading.value = false
+  }
+}
+
 function openAddParticipant() {
-  ElMessageBox.prompt('请输入用户 ID（需先有系统用户）', '添加参与人员', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
-    inputPattern: /^[1-9]\d*$/,
-    inputErrorMessage: '请输入有效的用户 ID',
-  }).then(async ({ value }) => {
-    try {
-      const role = prompt('请输入参与角色（如：指挥员、疏散员、操作员等）：')
-      if (!role) throw new Error('必须输入角色')
-      await addDrillParticipant(props.drillId, { user_id: parseInt(value) }, role)
-      ElMessage.success('参与人员已添加')
-      loadDetail()
-    } catch (err) {
-      if (err !== 'cancel') {
-        ElMessage.error(err.message || '添加失败')
-      }
-    }
-  }).catch(() => {})
+  addForm.user_id = null
+  addForm.role = '参与者'
+  addVisible.value = true
+  // 打开时才取数，且失败后下次打开会重试
+  if (!candidates.value.length) loadCandidates()
+}
+
+async function confirmAddParticipant() {
+  if (!addForm.user_id) {
+    ElMessage.warning('请选择人员')
+    return
+  }
+  addSubmitting.value = true
+  try {
+    // `{user_id}` 走 body、role 走 query —— 与后端 `DrillSignInRequest` + `Query("参与者")` 对齐。
+    // 后端是幂等 upsert：该人已在名单里则更新角色。
+    await addDrillParticipant(
+      props.drillId,
+      { user_id: addForm.user_id },
+      addForm.role || '参与者'
+    )
+    ElMessage.success('参与人员已添加')
+    addVisible.value = false
+    loadDetail()
+  } catch (err) {
+    ElMessage.error(err.message || '添加失败')
+  } finally {
+    addSubmitting.value = false
+  }
 }
 
 function triggerEvaluate() {

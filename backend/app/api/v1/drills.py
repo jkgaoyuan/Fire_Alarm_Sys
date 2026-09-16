@@ -35,6 +35,7 @@ from fastapi import APIRouter, Depends, Query, Path, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.core.dependencies import get_db, require_permission, get_current_user
 from app.models.user import User
@@ -51,6 +52,8 @@ from app.schemas.drill import (
     DrillEvaluationResponse,
     DrillEvaluationLite,
     ParticipantItem,
+    ParticipantInput,
+    DrillCandidateUser,
     DrillStatistics,
 )
 from app.crud.drill_crud import drill_crud, eval_crud
@@ -92,6 +95,56 @@ async def get_drill_or_404(db: AsyncSession, drill_id: int) -> DrillEvent:
     if not drill:
         raise HTTPException(status_code=404, detail="演练不存在")
     return drill
+
+
+def _participants_payload(
+    items: Optional[List[ParticipantInput]],
+) -> Optional[List[Dict[str, Any]]]:
+    """把 schema 的参与人员转成 CRUD 需要的 dict 列表。
+
+    `None` 表示「请求里没提供这个字段」—— 与「提供了空列表」含义不同
+    （前者不动，后者清空），所以这里不能退化成 `[]`。
+    """
+    if items is None:
+        return None
+    return [p.model_dump() for p in items]
+
+
+async def _participants_out(db: AsyncSession, drill: DrillEvent) -> List[ParticipantItem]:
+    """把存储的 participants 补上姓名后返回。
+
+    存储形状只有 `{user_id, role, sign_in_at}`（PRD 的 JSONB 形状），**不含姓名**；
+    而 `DrillEvent` **没有任何 relationship / ForeignKey**（见 `models/drill.py`，
+    `created_by` 只是裸 Integer），所以不能写 `drill.creator.real_name`，
+    只能手动查一次 User。
+
+    姓名**只进响应，绝不写回 JSONB**。用户已被删除时 `user_name` 留 `None`，
+    由前端回退显示 `#<user_id>`。
+
+    此前本文件有 6 处各自内联 `[ParticipantItem(**p) for p in ...]`，
+    全部无姓名；统一走这里，避免再出现第 7 处漏掉姓名。
+    """
+    raw = drill.participants or []
+    user_ids = {p["user_id"] for p in raw if "user_id" in p}
+
+    name_map: Dict[int, str] = {}
+    if user_ids:
+        rows = await db.execute(
+            select(User.id, User.real_name, User.username).where(User.id.in_(user_ids))
+        )
+        name_map = {uid: (real_name or username) for uid, real_name, username in rows.all()}
+
+    # 刻意逐字段构造而非 `ParticipantItem(**p)`：后者在存储形状意外多出
+    # `user_name` 键时会抛「重复传参」，而 JSONB 是无类型约束的。
+    return [
+        ParticipantItem(
+            user_id=p["user_id"],
+            role=p.get("role") or "参与者",
+            sign_in_at=p.get("sign_in_at"),
+            user_name=name_map.get(p["user_id"]),
+        )
+        for p in raw
+    ]
 
 
 # ==================== 演练计划管理 ====================
@@ -172,6 +225,7 @@ async def create_drill(
         planned_at=drill_data.planned_at,
         location=drill_data.location,
         participant_user_ids=drill_data.participant_user_ids,
+        participants_input=_participants_payload(drill_data.participants),
         status=drill_data.status or DrillStatus.planned,
     )
 
@@ -190,9 +244,7 @@ async def create_drill(
             summary=drill.summary,
             photos=drill.photos or [],
             videos=drill.videos or [],
-            participants=[
-                ParticipantItem(**p) for p in (drill.participants or [])
-            ],
+            participants=await _participants_out(db, drill),
             created_by=drill.created_by,
             updated_at=drill.updated_at,
         )
@@ -211,6 +263,63 @@ async def get_statistics(
     """获取演练统计信息"""
     stats = await drill_crud.get_stats(db)
     return Response(data=DrillStatistics(**stats))
+
+
+# ⚠️ 本路由必须声明在 `/drills/{drill_id}` 之前（下方）。FastAPI 按声明顺序匹配，
+#    否则 "participant-candidates" 会被 `{drill_id}: int` 吃掉并返回 422。
+#    同上方的 `/drills/statistics`。
+@router.get(
+    "/drills/participant-candidates",
+    response_model=Response[List[DrillCandidateUser]],
+    summary="演练参与人员候选人",
+    dependencies=[Depends(require_permission("drill:execute"))]
+)
+async def list_participant_candidates(
+    keyword: Optional[str] = Query(None, description="按用户名 / 姓名模糊搜索"),
+    db: AsyncSession = Depends(get_db),
+):
+    """列出可被选为参与人员的人员（供演练表单与详情页的选择器使用）
+
+    **为什么不复用 `GET /users`**：那个端点由 `system:user` 守卫，而演练域由
+    `drill:*` 守卫 —— 值班员与维保员持有 `drill:execute` 却**没有** `system:user`，
+    沿用会让「执行演练时加人」对他们整个不可用（与 P2-011 同族的问题）。
+
+    **为什么权限选 `drill:execute` 而非 `drill:view`**：`require_permission`
+    只接受单个权限码、没有 any-of 变体（`core/dependencies.py:86`）。而详情页
+    「添加参与人员」本身就是 `drill:execute` 守卫的，所以它是**在覆盖所有需要它
+    的人的前提下最窄的那个**；表单侧要 `drill:create`，主管绑定全部权限码，已被覆盖。
+
+    ⚠️ **暴露面变化**：值班员 / 维保员将首次能看到「活跃用户的姓名 + 角色名」。
+    他们本就能执行演练并为演练点名加人，属于本需求内在；因此这里刻意返回
+    **精简字段**（不含 phone / email / data_scope / status），不复用 `UserOut`。
+    """
+    stmt = (
+        select(User)
+        .options(selectinload(User.roles))
+        .where(User.status == "active")
+        .order_by(User.id.asc())
+    )
+    if keyword:
+        stmt = stmt.where(
+            User.username.ilike(f"%{keyword}%") | User.real_name.ilike(f"%{keyword}%")
+        )
+    # 沿用全仓既有用户选择器的约定（一次性拉 100，无 remote-method）。
+    # 已知限制：用户超过 100 人时选不到，已登记待办。
+    stmt = stmt.limit(100)
+
+    users = (await db.execute(stmt)).scalars().all()
+
+    return Response(
+        data=[
+            DrillCandidateUser(
+                id=u.id,
+                username=u.username,
+                real_name=u.real_name,
+                role_names=[r.role_name for r in u.roles],
+            )
+            for u in users
+        ]
+    )
 
 
 @router.get(
@@ -258,7 +367,7 @@ async def get_drill_detail(
             summary=drill.summary,
             photos=drill.photos or [],
             videos=drill.videos or [],
-            participants=[ParticipantItem(**p) for p in (drill.participants or [])],
+            participants=await _participants_out(db, drill),
             created_by=drill.created_by,
             updated_at=drill.updated_at,
             evaluation=eval_resp,
@@ -288,6 +397,7 @@ async def update_drill(
         actual_end_at=update_data.actual_end_at,
         location=update_data.location,
         participant_user_ids=update_data.participant_user_ids,
+        participants_input=_participants_payload(update_data.participants),
         status=update_data.status,
         summary=update_data.summary,
         photos=update_data.photos,
@@ -312,7 +422,7 @@ async def update_drill(
             summary=updated.summary,
             photos=updated.photos or [],
             videos=updated.videos or [],
-            participants=[ParticipantItem(**p) for p in (updated.participants or [])],
+            participants=await _participants_out(db, updated),
             created_by=updated.created_by,
             updated_at=updated.updated_at,
         )
@@ -376,7 +486,7 @@ async def start_execute_drill(
             summary=drill.summary,
             photos=drill.photos or [],
             videos=drill.videos or [],
-            participants=[ParticipantItem(**p) for p in (drill.participants or [])],
+            participants=await _participants_out(db, drill),
             created_by=drill.created_by,
             updated_at=drill.updated_at,
         )
@@ -420,7 +530,7 @@ async def complete_drill(
             summary=drill.summary,
             photos=drill.photos or [],
             videos=drill.videos or [],
-            participants=[ParticipantItem(**p) for p in (drill.participants or [])],
+            participants=await _participants_out(db, drill),
             created_by=drill.created_by,
             updated_at=drill.updated_at,
         )
@@ -463,7 +573,7 @@ async def cancel_drill(
             summary=drill.summary,
             photos=drill.photos or [],
             videos=drill.videos or [],
-            participants=[ParticipantItem(**p) for p in (drill.participants or [])],
+            participants=await _participants_out(db, drill),
             created_by=drill.created_by,
             updated_at=drill.updated_at,
         )
