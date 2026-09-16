@@ -30,7 +30,53 @@ const HISTORY = {
       created_at: '2026-03-15T09:00:00',
     },
   ],
-  unavailable_sources: ['inspection', 'repair'],
+}
+
+/**
+ * 四类数据源齐全的载荷，供页签过滤与配色用例使用。
+ * 单列一份而不是改造上面的 `HISTORY`，是为了不去搅动那些与本次无关的既有断言。
+ */
+const HISTORY_FULL = {
+  device_id: 1,
+  device_code: 'DEV-SMK-001',
+  total: 5,
+  items: [
+    {
+      category: 'inspection',
+      title: '巡检：异常',
+      detail: '压力表读数偏低',
+      operator: '张三',
+      created_at: '2026-09-08T11:40:00',
+    },
+    {
+      category: 'repair',
+      title: '维修：RO-ABC123（维修中）',
+      detail: '泵体异响',
+      operator: '李四',
+      created_at: '2026-09-08T11:30:00',
+    },
+    {
+      category: 'alarm',
+      title: '报警：火警',
+      detail: '3 层东侧',
+      operator: '值班员',
+      created_at: '2026-09-08T11:25:00',
+    },
+    {
+      category: 'status_change',
+      title: '状态变更：正常 → 已退役',
+      detail: '设备老化，整机更换',
+      operator: 'admin',
+      created_at: '2026-09-08T11:20:00',
+    },
+    {
+      category: 'status_change',
+      title: '建档：DEV-SMK-001',
+      detail: '初始状态：正常',
+      operator: 'chief',
+      created_at: '2026-03-15T09:00:00',
+    },
+  ],
 }
 
 async function mountDetail(props = {}) {
@@ -86,22 +132,57 @@ describe('ArchiveDetail.vue 设备档案详情', () => {
     expect(entries[1].text()).toContain('建档：DEV-SMK-001')
   })
 
-  it('未上线的数据源以占位页签显式告知', async () => {
+  it('巡检 / 维修页签展示真数据并按类别过滤（不再是「尚未上线」占位）', async () => {
+    // 3.4 / 3.7 已交付，后端已把两类记录聚合进时间轴，占位机制随接入移除
+    getDeviceHistory.mockResolvedValue({ data: HISTORY_FULL })
     const wrapper = await mountDetail({ deviceId: 1 })
 
     const tabs = wrapper.findAll('.el-tabs__item').map((tab) => tab.text())
     expect(tabs).toEqual(
       expect.arrayContaining(['历史记录', '状态轨迹', '巡检记录', '维修记录'])
     )
-    // 报警记录已由 3.3 聚合进时间轴，不再是占位数据源
-    expect(tabs).not.toContain('报警记录')
+    // 占位文案必须彻底消失
+    expect(wrapper.text()).not.toContain('尚未上线')
 
-    const inspectionTab = wrapper.findAll('.el-tabs__item').find((tab) => tab.text() === '巡检记录')
-    await inspectionTab.trigger('click')
+    // 「历史记录」= 全部四类
+    expect(wrapper.text()).toContain('巡检：异常')
+    expect(wrapper.text()).toContain('维修：RO-ABC123')
+    expect(wrapper.text()).toContain('报警：火警')
+    expect(wrapper.text()).toContain('建档：DEV-SMK-001')
+
+    // 「巡检记录」只剩巡检 —— 这条同时钉住 visibleHistory 的按类别过滤
+    await wrapper.findAll('.el-tabs__item').find((t) => t.text() === '巡检记录').trigger('click')
     await flushPromises()
+    expect(wrapper.text()).toContain('巡检：异常')
+    expect(wrapper.text()).not.toContain('维修：RO-ABC123')
+    expect(wrapper.text()).not.toContain('报警：火警')
+    expect(wrapper.text()).not.toContain('建档：DEV-SMK-001')
 
-    expect(wrapper.text()).toContain('巡检记录模块尚未上线，暂无数据')
-    expect(wrapper.text()).toContain('对应开发计划：3.4 巡检管理')
+    // 「维修记录」只剩维修
+    await wrapper.findAll('.el-tabs__item').find((t) => t.text() === '维修记录').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('维修：RO-ABC123')
+    expect(wrapper.text()).not.toContain('巡检：异常')
+  })
+
+  it('时间轴按类别分色 —— 火警不得渲染成表示「成功」的绿色', async () => {
+    getDeviceHistory.mockResolvedValue({ data: HISTORY_FULL })
+    const wrapper = await mountDetail({ deviceId: 1 })
+
+    // el-timeline-item 把 type 映射到节点修饰类上，按 DOM 断言而不依赖组件内部
+    const nodes = wrapper.findAll('.el-timeline-item__node')
+    const nodeClassOf = (title) => {
+      const row = wrapper
+        .findAll('.el-timeline-item')
+        .find((li) => li.text().includes(title))
+      return row.find('.el-timeline-item__node').classes().join(' ')
+    }
+
+    expect(nodes).toHaveLength(5)
+    expect(nodeClassOf('报警：火警')).toContain('danger')
+    expect(nodeClassOf('巡检：异常')).toContain('success')
+    expect(nodeClassOf('维修：RO-ABC123')).toContain('warning')
+    expect(nodeClassOf('建档：')).toContain('primary')
   })
 
   it('档案接口失败时显示空态而不是抛错', async () => {

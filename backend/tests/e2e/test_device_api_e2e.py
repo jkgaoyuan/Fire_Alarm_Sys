@@ -215,7 +215,8 @@ def test_history_timeline(chief, types, org_id, prefix):
     assert latest["title"] == "状态变更：正常 → 已退役" and latest["detail"] == "改造停用"
     assert filing["title"] == "建档：正常" and filing["detail"] == "设备建档"
     assert latest["operator"] == "系统管理员"
-    assert history["unavailable_sources"] == ["inspection", "repair"]
+    # 3.4/3.7 接入后四类数据源全部可聚合，`unavailable_sources` 已移除
+    assert "unavailable_sources" not in history
 
 
 def test_update_device_persists(chief, device):

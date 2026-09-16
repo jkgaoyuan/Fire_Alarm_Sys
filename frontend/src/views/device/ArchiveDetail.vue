@@ -56,7 +56,19 @@
         </el-descriptions>
 
         <el-tabs v-model="activeTab" class="history-tabs">
-          <el-tab-pane label="历史记录" name="all">
+          <!-- 三个历史视图（全部 / 巡检 / 维修）共用同一段时间轴渲染，
+               差别只是 visibleHistory 按 activeTab 过滤。
+
+               `lazy` 是必须的：el-tab-pane **默认不懒渲染**，三个页签会各渲染一份
+               完整时间轴（实测 DOM 里条目数是数据的 3 倍）。加上它后未访问过的页签
+               不渲染，既省一遍 DOM，也让「历史记录页签共几条」这类断言能落在真实数量上。 -->
+          <el-tab-pane
+            v-for="tab in historyTabs"
+            :key="tab.name"
+            :label="tab.label"
+            :name="tab.name"
+            lazy
+          >
             <el-timeline v-if="visibleHistory.length > 0">
               <el-timeline-item
                 v-for="(item, index) in visibleHistory"
@@ -70,22 +82,11 @@
                 <div v-if="item.operator" class="history-operator">操作人：{{ item.operator }}</div>
               </el-timeline-item>
             </el-timeline>
-            <el-empty v-else description="该设备暂无历史记录" />
+            <el-empty v-else :description="tab.empty" />
           </el-tab-pane>
 
           <el-tab-pane label="状态轨迹" name="trajectory">
             <DeviceTrajectory v-if="activeTab === 'trajectory'" :device-id="deviceId" />
-          </el-tab-pane>
-
-          <el-tab-pane
-            v-for="source in pendingSources"
-            :key="source.key"
-            :label="source.label"
-            :name="source.key"
-          >
-            <el-empty :description="`${source.label}模块尚未上线，暂无数据`">
-              <div class="source-tip">对应开发计划：{{ source.plan }}</div>
-            </el-empty>
           </el-tab-pane>
         </el-tabs>
       </template>
@@ -113,21 +114,20 @@ const device = ref(null)
 const history = ref(null)
 const activeTab = ref('all')
 
-// 维修/巡检分属 3.7 / 3.4 模块，未上线时后端通过 unavailable_sources 显式告知
-// 报警记录已由 3.3 聚合进时间轴，不再是需要占位的数据源
-const SOURCE_META = {
-  repair: { label: '维修记录', plan: '3.7 维修工单' },
-  inspection: { label: '巡检记录', plan: '3.4 巡检管理' },
-}
+// 三个历史视图共用同一段时间轴渲染，只是按类别过滤。
+// 巡检/维修此前是「模块尚未上线」的占位页签（数据源由后端 `unavailable_sources` 告知）；
+// 3.4 / 3.7 已交付、后端已把两类记录聚合进时间轴，占位机制随之移除。
+const historyTabs = [
+  { name: 'all', label: '历史记录', empty: '该设备暂无历史记录' },
+  { name: 'inspection', label: '巡检记录', empty: '该设备暂无巡检记录' },
+  { name: 'repair', label: '维修记录', empty: '该设备暂无维修记录' },
+]
 
-const pendingSources = computed(() =>
-  (history.value?.unavailable_sources || []).map((key) => ({
-    key,
-    ...(SOURCE_META[key] || { label: key, plan: '' }),
-  }))
-)
-
-const visibleHistory = computed(() => history.value?.items || [])
+const visibleHistory = computed(() => {
+  const items = history.value?.items || []
+  if (activeTab.value === 'all') return items
+  return items.filter((item) => item.category === activeTab.value)
+})
 
 const attributeEntries = computed(() => {
   if (!device.value) return []
@@ -150,9 +150,17 @@ function formatCoordinate(item) {
   return `(${item.map_x ?? '-'}, ${item.map_y ?? '-'})`
 }
 
+// 按类别分色。此前是「`status_change` 之外一律 `success`」—— 于是**火警在时间轴上
+// 渲染成绿色**，与「火警」的语义相反，属既存配色错误，随本次接入一并修正。
+const TIMELINE_TYPES = {
+  status_change: 'primary',
+  alarm: 'danger',
+  inspection: 'success',
+  repair: 'warning',
+}
+
 function timelineType(category) {
-  if (category === 'status_change') return 'primary'
-  return 'success'
+  return TIMELINE_TYPES[category] || 'primary'
 }
 
 async function loadAll() {
@@ -211,8 +219,7 @@ watch(
 }
 
 .history-detail,
-.history-operator,
-.source-tip {
+.history-operator {
   color: #909399;
   font-size: 13px;
   margin-top: 4px;

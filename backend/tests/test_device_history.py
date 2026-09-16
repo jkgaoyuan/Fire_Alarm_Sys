@@ -19,6 +19,8 @@ from tests.device_helpers import (
     create_org,
     device_payload,
 )
+from tests.inspection_helpers import make_plan, make_record, make_task
+from tests.repair_helpers import make_repair_order
 
 
 @pytest_asyncio.fixture
@@ -70,8 +72,67 @@ async def test_history_aggregates_status_changes(client, history_env):
 
 
 @pytest.mark.asyncio
-async def test_history_declares_unavailable_sources(client, history_env):
-    """3.3 后报警已可聚合，仅剩维修/巡检未上线，必须显式告知而不是伪装成空"""
+async def test_history_merges_inspection_and_repair(client, history_env, db_session):
+    """巡检与维修记录与状态变更同轴展示（3.4 / 3.7 接入 FR-011 跨类别聚合）
+
+    这两类此前被写死在 `PENDING_SOURCES` 里、以「模块尚未上线」的占位页签呈现，
+    而数据其实早已在库中。本用例镜像同文件的 `test_history_merges_alarms`。
+    """
+    env = history_env
+    device_id = await _create(client, env)
+
+    plan = await make_plan(
+        db_session, plan_name="设备历史接入验证", responsible_user_id=env["user"].id
+    )
+    task = await make_task(
+        db_session, plan_id=plan.id, responsible_user_id=env["user"].id
+    )
+    await make_record(
+        db_session,
+        task_id=task.id,
+        device_id=device_id,
+        inspected_by=env["user"].id,
+        result="abnormal",
+        abnormal_desc="压力表读数偏低",
+        inspected_at=datetime.utcnow() + timedelta(seconds=2),
+    )
+    order = await make_repair_order(
+        db_session,
+        device_id=device_id,
+        created_by=env["user"].id,
+        reporter_id=env["user"].id,
+        status="repairing",
+    )
+    # `make_repair_order` 用模型默认的 created_at（= 建单当下的 utcnow），
+    # 显式钉住以让倒序断言确定
+    order.created_at = datetime.utcnow() + timedelta(seconds=1)
+    await db_session.commit()
+
+    data = (
+        await client.get(
+            f"/api/v1/devices/{device_id}/history", headers=auth_headers(env["user"])
+        )
+    ).json()["data"]
+
+    # 巡检(2s) → 维修(1s) → 建档(更早)，按时间倒序
+    assert [(i["category"], i["title"]) for i in data["items"]] == [
+        ("inspection", "巡检：异常"),
+        ("repair", f"维修：{order.order_no}（维修中）"),
+        ("status_change", "建档：正常"),
+    ]
+    inspection, repair = data["items"][0], data["items"][1]
+    assert inspection["detail"] == "压力表读数偏低"
+    assert inspection["operator"] == env["user"].real_name
+    assert repair["detail"] == "测试故障描述"
+    assert repair["operator"] == env["user"].real_name
+
+    # 四类数据源全部可聚合后，「哪些数据源暂缺」这个字段已无意义，随接入一并移除
+    assert "unavailable_sources" not in data
+
+
+@pytest.mark.asyncio
+async def test_history_without_inspection_or_repair_is_still_empty(client, history_env):
+    """没有巡检/维修记录时，时间轴不得因此报错、也不得塞占位条目"""
     env = history_env
     device_id = await _create(client, env)
 
@@ -80,7 +141,9 @@ async def test_history_declares_unavailable_sources(client, history_env):
             f"/api/v1/devices/{device_id}/history", headers=auth_headers(env["user"])
         )
     ).json()["data"]
-    assert data["unavailable_sources"] == ["inspection", "repair"]
+
+    assert data["total"] == 1  # 仅有建档那条状态变更
+    assert [i["category"] for i in data["items"]] == ["status_change"]
 
 
 @pytest.mark.asyncio

@@ -144,16 +144,16 @@ class HistoryItemOut(BaseModel):
 
 
 class DeviceHistoryOut(BaseModel):
-    """设备历史记录输出"""
+    """设备历史记录输出
+
+    3.4 巡检与 3.7 维修已接入，四类数据源（状态变更 / 报警 / 巡检 / 维修）全部可聚合，
+    原先用于标记「哪些数据源暂缺」的 `unavailable_sources` 字段随之移除。
+    """
 
     device_id: int
     device_code: str
     total: int
     items: list[HistoryItemOut] = []
-    unavailable_sources: list[str] = Field(
-        default_factory=list,
-        description="因所属模块（3.4 巡检 / 3.7 维修）尚未开发而无法聚合的数据源",
-    )
 
 
 class TrajectoryPointOut(BaseModel):

@@ -1,9 +1,11 @@
 """
 设备历史记录与历史轨迹（3.2 B-11 / FR-011、3.3 B-18 / FR-018）
 
-计划要求聚合 device_status_logs / alarms / repair_orders / inspection_records 四张表。
-维修与巡检两张表属于 3.4/3.7 模块尚未建库，此处按现有表输出状态变更时间轴，
-并通过 unavailable_sources 显式告知前端哪些数据源暂缺，避免前端把「无记录」误读为「无历史」。
+聚合 `device_status_logs` / `alarms` / `repair_orders` / `inspection_records` 四张表。
+
+3.4 巡检与 3.7 维修均已交付，四类数据源**全部可聚合**。此前那份
+`PENDING_SOURCES` 声明与响应里的 `unavailable_sources` 字段是这两张表尚未建库时的
+临时保护（避免前端把「无记录」误读成「无历史」），已于 2026-09-16 随接入一并移除。
 
 `get_device_trajectory()` 是同一张 `device_status_logs` 的**单类别时序视图**：
 带时间区间、分页与导出，供 FR-018 折线/甘特展示；与上方跨类别聚合共用数据源，不重复实现。
@@ -22,14 +24,10 @@ from sqlalchemy.orm import selectinload
 
 from app.models.alarm import Alarm
 from app.models.device import Device, DeviceStatusLog
+from app.models.inspection import InspectionRecord
+from app.models.repair import RepairOrder
 from app.models.user import User
 from app.services.device_service import apply_device_data_scope
-
-# 尚未落地对应模块的数据源（模块上线后逐个移除并补查询分支）
-PENDING_SOURCES: dict[str, str] = {
-    "repair": "3.7 维修工单",
-    "inspection": "3.4 巡检管理",
-}
 
 TRAJECTORY_DEFAULT_DAYS = 7
 TRAJECTORY_MAX_DAYS = 90
@@ -66,6 +64,21 @@ ALARM_STATUS_LABELS: dict[str, str] = {
     "false_alarm": "误报",
     "processing": "处理中",
     "resolved": "已解决",
+}
+
+INSPECTION_RESULT_LABELS: dict[str, str] = {
+    "normal": "正常",
+    "abnormal": "异常",
+}
+
+# 取值与 `app.models.repair.RepairOrderStatus` 一一对应
+REPAIR_STATUS_LABELS: dict[str, str] = {
+    "pending": "待处理",
+    "assigned": "已派单",
+    "repairing": "维修中",
+    "pending_accept": "待验收",
+    "completed": "已完成",
+    "returned": "已退回",
 }
 
 
@@ -129,6 +142,73 @@ async def _alarm_items(db: AsyncSession, device_id: int, limit: int) -> list[dic
     return items
 
 
+async def _inspection_items(db: AsyncSession, device_id: int, limit: int) -> list[dict]:
+    """巡检记录（FR-034 / FR-036）。一条记录一条时间轴条目，与 `_alarm_items` 同粒度。"""
+    records = (
+        (
+            await db.execute(
+                select(InspectionRecord)
+                .options(selectinload(InspectionRecord.inspector))
+                .where(InspectionRecord.device_id == device_id)
+                .order_by(
+                    InspectionRecord.inspected_at.desc(), InspectionRecord.id.desc()
+                )
+                .limit(limit)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    items: list[dict[str, Any]] = []
+    for record in records:
+        outcome = INSPECTION_RESULT_LABELS.get(record.result, record.result)
+        items.append(
+            {
+                "category": "inspection",
+                "title": f"巡检：{outcome}",
+                "detail": record.abnormal_desc,
+                "operator": record.inspector.real_name if record.inspector else None,
+                "created_at": record.inspected_at,
+            }
+        )
+    return items
+
+
+async def _repair_items(db: AsyncSession, device_id: int, limit: int) -> list[dict]:
+    """维修工单（FR-038 ~ FR-042）。
+
+    每个工单只出一条条目，时间取**建单时间** —— 与报警「一条报警一条」的粒度一致。
+    `assigned_at` / `completed_at` / `accepted_at` 不在时间轴上展开，
+    它们在工单详情里看；展开会让条目数成倍增长且与其它类别粒度不齐。
+    """
+    orders = (
+        (
+            await db.execute(
+                select(RepairOrder)
+                .options(selectinload(RepairOrder.reporter))
+                .where(RepairOrder.device_id == device_id)
+                .order_by(RepairOrder.created_at.desc(), RepairOrder.id.desc())
+                .limit(limit)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    items: list[dict[str, Any]] = []
+    for order in orders:
+        state = REPAIR_STATUS_LABELS.get(order.status, order.status)
+        items.append(
+            {
+                "category": "repair",
+                "title": f"维修：{order.order_no}（{state}）",
+                "detail": order.fault_desc,
+                "operator": order.reporter.real_name if order.reporter else None,
+                "created_at": order.created_at,
+            }
+        )
+    return items
+
+
 async def get_device_history(
     db: AsyncSession, device_id: int, *, user: User, limit: int = 100
 ) -> dict[str, Any] | None:
@@ -139,10 +219,15 @@ async def get_device_history(
     if device is None:
         return None
 
-    # 3.4/3.7 未建库，仅状态与报警两类可聚合；区间内各取 limit 条后再合并截断，
-    # 避免某一类记录过多把另一类完全挤出时间轴。
+    # 四类数据源各自取 limit 条后再合并截断，避免某一类记录过多把另一类完全挤出时间轴。
+    #
+    # 时间戳**一律原样透传，不做时区折算**：四个列在库里的类型完全一致
+    # （均为 `timestamp with time zone`，实测 2026-09-16），响应里统一是带 `Z` 的
+    # aware UTC。若只给新接入的两类做 naive 折算，会出现同一时间轴里两种时区的错乱。
     merged = await _status_items(db, device_id, limit)
     merged += await _alarm_items(db, device_id, limit)
+    merged += await _inspection_items(db, device_id, limit)
+    merged += await _repair_items(db, device_id, limit)
     merged.sort(key=lambda item: item["created_at"], reverse=True)
     items = merged[:limit]
 
@@ -151,7 +236,6 @@ async def get_device_history(
         "device_code": device.device_code,
         "total": len(items),
         "items": items,
-        "unavailable_sources": sorted(PENDING_SOURCES),
     }
 
 
