@@ -95,7 +95,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getDevice, getDeviceHistory } from '@/api/device'
 import { deviceStatusLabel, deviceStatusType, resolveAttributeFields } from '@/utils/device'
@@ -174,6 +174,31 @@ async function loadAll() {
     loading.value = false
   }
 }
+
+/**
+ * `deviceId` 变化必须重新取数 —— 只挂抽屉的 `@open` 是不够的。
+ *
+ * **必须 `immediate: true`**，这条是主场景：`Archive.vue` 监听 `route.query.detail`
+ * 时带 `{ immediate: true }`，在 **setup 阶段同步**就把 `detailVisible` 置为 true，
+ * 于是 `el-drawer` **第一次渲染时就已经是打开状态**，不存在「关→开」跳变，
+ * `@open` **永不触发** → `loadAll()` 从不执行 → `device` 停在 null →
+ * 渲染出 v-else 的「设备不存在或已被删除」，而设备其实存在、**请求压根没发出去**。
+ * 「大屏电子地图点击设备 → 进设备详情 → 提示设备不存在」走的正是这条路径。
+ *
+ * 另一条场景：`/device/archive?detail=1` → `?detail=2` 是**同一条路由换 query**，
+ * Vue 复用组件不重新挂载，抽屉一直开着 → `open` 同样不触发。
+ *
+ * 抽屉关着时不预加载（等 `@open`），避免白发一次请求。
+ * 两种路径合计只加载一次：已在打开态时本 watch 单独生效（无 open 事件），
+ * 关闭态时 `@open` 单独生效（本 watch 被守卫挡下）。
+ */
+watch(
+  () => props.deviceId,
+  () => {
+    if (props.modelValue) loadAll()
+  },
+  { immediate: true }
+)
 </script>
 
 <style lang="scss" scoped>

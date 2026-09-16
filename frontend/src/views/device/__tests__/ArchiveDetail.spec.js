@@ -111,4 +111,59 @@ describe('ArchiveDetail.vue 设备档案详情', () => {
     expect(wrapper.text()).toContain('设备不存在或已被删除')
     expect(wrapper.find('.el-descriptions').exists()).toBe(false)
   })
+
+  /**
+   * 回归：抽屉**开着**的时候换 deviceId，必须重新取数。
+   *
+   * 这正是「大屏电子地图点击设备 → 跳设备详情 → 提示设备不存在或已被删除，
+   * 而设备其实存在」的根因：`/device/archive?detail=1` → `?detail=2` 是
+   * **同一条路由换 query**，Vue 复用组件不重新挂载；而加载只挂在抽屉的
+   * `@open` 上，`open` 只在「关→开」跳变时触发 —— deviceId 变了但抽屉一直开着，
+   * `open` 不再触发，`loadAll()` 从不执行，`device` 保持 null，
+   * 于是渲染出 v-else 的「设备不存在或已被删除」，**请求压根没发出去**。
+   */
+  /**
+   * **主场景回归**：挂载时抽屉就已经是打开的（不存在任何「关→开」跳变）。
+   *
+   * 大屏点设备跳 `/device/archive?detail=X` 时，`Archive.vue` 的
+   * `watch(() => route.query.detail, ..., { immediate: true })` 在 **setup 里同步**
+   * 就把 `detailVisible` 置为 true，于是 `el-drawer` 首渲染即打开 ——
+   * 真实的 el-drawer 不会为此发 `open` 事件。若加载只挂在 `@open` 上，
+   * `loadAll()` 就永远不执行，页面渲染出「设备不存在或已被删除」，而设备其实存在。
+   *
+   * 注意本文件原有的 `mountDetail()` 刻意**先 modelValue: false 再 setProps(true)**，
+   * 正好绕开了这条路径 —— 所以这个缺陷长期没被看见。
+   */
+  it('挂载时抽屉已打开也要加载（大屏跳转的主场景）', async () => {
+    const wrapper = mount(
+      ArchiveDetail,
+      overlayOptions({ deviceTypes: SAMPLE_TYPES, modelValue: true, deviceId: 3 })
+    )
+    await flushPromises()
+
+    expect(getDevice).toHaveBeenCalledWith(3)
+    expect(getDeviceHistory).toHaveBeenCalledWith(3, { limit: 200 })
+    expect(wrapper.text()).toContain('DEV-SMK-001')
+  })
+
+  it('抽屉关着时不预取，等打开再加载（避免白发请求）', async () => {
+    mount(ArchiveDetail, overlayOptions({ deviceTypes: SAMPLE_TYPES, deviceId: 3 }))
+    await flushPromises()
+    expect(getDevice).not.toHaveBeenCalled()
+  })
+
+  it('抽屉开着时切换 deviceId 会重新取数', async () => {
+    const wrapper = await mountDetail({ deviceId: 1 })
+    expect(getDevice).toHaveBeenCalledWith(1)
+    // `@open` 与 deviceId 的 watch 不能各发一次 —— 打开只加载一次
+    expect(getDevice).toHaveBeenCalledTimes(1)
+
+    // 模拟 ?detail=1 → ?detail=2：组件复用，modelValue 始终为 true，无「关→开」跳变
+    await wrapper.setProps({ deviceId: 2 })
+    await flushPromises()
+
+    expect(getDevice).toHaveBeenCalledWith(2)
+    expect(getDeviceHistory).toHaveBeenCalledWith(2, { limit: 200 })
+    expect(getDevice).toHaveBeenCalledTimes(2)
+  })
 })
