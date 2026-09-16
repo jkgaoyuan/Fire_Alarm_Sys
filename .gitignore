@@ -13,7 +13,13 @@ single_test_run.txt
 test_after_conftest_fix.txt
 test_v*.txt
 backend/debug_inspection_500.py
-frontend/node_modules/*
+
+# 依赖目录（任意层级）
+# 原来写的是 `frontend/node_modules/*` —— 带 `/*` 只忽略该目录的**内容**、
+# 且路径写死，覆盖不到根级或 backend 下的 node_modules。实测在仓库根误跑一次
+# npm/npx 就会生成一个 `node_modules/`（内含空的 `.vite` 缓存）出现在 git status 里，
+# `git add .` 有误收风险。通用写法严格包含旧规则，故取而代之。
+node_modules/
 
 # 前端构建产物（npm run build 输出）
 frontend/dist/
