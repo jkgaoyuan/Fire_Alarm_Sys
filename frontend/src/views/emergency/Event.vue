@@ -67,9 +67,29 @@
         <el-table-column label="完成时间" width="170">
           <template #default="{ row }">{{ row.resolved_at ? formatTime(row.resolved_at) : '-' }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="200" align="center" fixed="right">
+        <el-table-column label="操作" width="320" align="center" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row)">详情</el-button>
+            <el-button
+              v-if="row.status === 'processing'"
+              v-permission="'emergency:resolve'"
+              link
+              type="warning"
+              :loading="actingId === row.id"
+              @click="handleResolve(row)"
+            >
+              处置完成
+            </el-button>
+            <el-button
+              v-if="row.status !== 'closed'"
+              v-permission="'emergency:close'"
+              link
+              type="danger"
+              :loading="actingId === row.id"
+              @click="handleClose(row)"
+            >
+              关闭事件
+            </el-button>
             <el-button
               v-permission="'emergency:export'"
               link
@@ -111,7 +131,7 @@
         <!-- 时间轴 -->
         <div class="timeline-section">
           <h4>处置时间轴</h4>
-          <TimelineEditor :event-id="current.id" :read-only="true" />
+          <TimelineEditor :event-id="current.id" :read-only="!canEditTimeline" />
         </div>
 
         <!-- 操作按钮 -->
@@ -127,10 +147,11 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { getOrganizationTree } from '@/api/organization'
-import { getEmergencyEvents, exportEventReport } from '@/api/emergency'
+import { closeEvent, exportEventReport, getEmergencyEvents, resolveEvent } from '@/api/emergency'
+import { usePermissionStore } from '@/stores/permission'
 import { stripEmptyChildren } from '@/utils/device'
 import TimelineEditor from '@/components/TimelineEditor.vue'
 
@@ -148,7 +169,11 @@ const STATUS_OPTIONS = [
   { label: '已关闭', value: 'closed' },
 ]
 
+const permissionStore = usePermissionStore()
+
 const loading = ref(false)
+/** 正在执行处置完成 / 关闭事件的行 id，避免同一行重复点击 */
+const actingId = ref(null)
 const exportingId = ref(null)
 const rows = ref([])
 const orgOptions = ref([])
@@ -220,9 +245,83 @@ function handleSizeChange(size) {
   loadEvents()
 }
 
+/** 时间轴只有拿到 emergency:timeline 才能增删节点，否则 TimelineEditor 走只读分支 */
+const canEditTimeline = computed(() => permissionStore.permissions.includes('emergency:timeline'))
+
 function openDetail(row) {
   current.value = row
   detailVisible.value = true
+}
+
+/**
+ * 处置完成（FR-031）。总结可留空——后端 `summary` 是可选的，
+ * 留空时只流转状态、不写总结与时间轴描述。
+ */
+async function handleResolve(row) {
+  let summary = ''
+  try {
+    const { value } = await ElMessageBox.prompt('可填写处置总结，留空则不记录。', '处置完成', {
+      confirmButtonText: '确认完成',
+      cancelButtonText: '取消',
+      inputType: 'textarea',
+      inputPlaceholder: '例如：已扑灭，无人员伤亡',
+    })
+    summary = value || ''
+  } catch {
+    return // 取消：不做任何事，也不报错
+  }
+
+  actingId.value = row.id
+  try {
+    const res = await resolveEvent(row.id, summary)
+    if (res.code === 200) {
+      ElMessage.success('已标记为处置完成')
+      await afterAction()
+    } else {
+      ElMessage.error(res.message || '操作失败')
+    }
+  } catch (err) {
+    ElMessage.error(err.message || '操作失败')
+  } finally {
+    actingId.value = null
+  }
+}
+
+/** 强制关闭（主管权限）。不可逆地结束事件，因此要二次确认 */
+async function handleClose(row) {
+  try {
+    await ElMessageBox.confirm(
+      `确定关闭应急事件「${row.event_no}」吗？关闭后事件不再流转。`,
+      '二次确认',
+      { confirmButtonText: '确定关闭', cancelButtonText: '取消', type: 'warning' }
+    )
+  } catch {
+    return // 取消
+  }
+
+  actingId.value = row.id
+  try {
+    const res = await closeEvent(row.id)
+    if (res.code === 200) {
+      ElMessage.success('事件已关闭')
+      await afterAction()
+    } else {
+      ElMessage.error(res.message || '操作失败')
+    }
+  } catch (err) {
+    ElMessage.error(err.message || '操作失败')
+  } finally {
+    actingId.value = null
+  }
+}
+
+/** 处置后列表状态会变，详情若开着也要同步——否则抽屉里还显示旧状态 */
+async function afterAction() {
+  await loadEvents()
+  if (detailVisible.value && current.value) {
+    const fresh = rows.value.find((item) => item.id === current.value.id)
+    if (fresh) current.value = fresh
+  }
 }
 
 function progressPercentage(row) {

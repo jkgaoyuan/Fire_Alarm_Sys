@@ -15,16 +15,32 @@ vi.mock('@/api/emergency', () => ({
   addTimelineNode: vi.fn(),
   deleteTimelineNode: vi.fn(),
   exportEventReport: vi.fn(),
+  resolveEvent: vi.fn(),
+  closeEvent: vi.fn(),
   getNotifications: vi.fn(),
   markNotificationRead: vi.fn(),
   markNotificationsAsRead: vi.fn(),
 }))
 
+// MessageBox 渲染在组件树之外，替换为可控 mock，其余导出保持原样
+vi.mock('element-plus', async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    ElMessageBox: {
+      ...actual.ElMessageBox,
+      prompt: vi.fn(),
+      confirm: vi.fn(),
+    },
+  }
+})
+
 vi.mock('@/api/organization', () => ({
   getOrganizationTree: vi.fn().mockResolvedValue({ data: [] }),
 }))
 
-import { getEmergencyEvents, exportEventReport } from '@/api/emergency'
+import { ElMessageBox } from 'element-plus'
+import { getEmergencyEvents, exportEventReport, resolveEvent, closeEvent } from '@/api/emergency'
 
 const ALL_PERMS = ['emergency:view', 'emergency:timeline', 'emergency:resolve', 'emergency:close', 'emergency:export']
 
@@ -57,6 +73,9 @@ beforeEach(() => {
   getEmergencyEvents.mockResolvedValue({
     data: { items: [event(1), event(2, { status: 'resolved', resolved_at: '2026-09-10T10:30:00' })], total: 2 },
   })
+  // 填后端真实信封（含 message），空壳 { code: 200 } 会让成功分支的文案断言失效
+  resolveEvent.mockResolvedValue({ code: 200, message: '处置完成', data: event(1, { status: 'resolved' }) })
+  closeEvent.mockResolvedValue({ code: 200, message: '事件已关闭', data: event(1, { status: 'closed' }) })
 })
 
 describe('应急事件列表（3.5-F1）', () => {
@@ -121,5 +140,83 @@ describe('应急事件列表（3.5-F1）', () => {
     expect(exportEventReport).toHaveBeenCalledWith(1)
     expect(window.URL.createObjectURL).toHaveBeenCalledWith(blob)
     expect(window.URL.revokeObjectURL).toHaveBeenCalledWith('blob:mock-url')
+  })
+
+  it('T6-6: 处置完成弹窗填写总结后调用 resolveEvent 并刷新列表', async () => {
+    const wrapper = await mountEvent()
+    ElMessageBox.prompt.mockResolvedValue({ value: '已扑灭，无人员伤亡' })
+
+    await findButton(wrapper.findAll('.el-table__body tbody tr')[0], '处置完成').trigger('click')
+    await flushPromises()
+
+    expect(resolveEvent).toHaveBeenCalledWith(1, '已扑灭，无人员伤亡')
+    // 处置后必须重新拉列表，否则状态仍显示「处理中」
+    expect(getEmergencyEvents).toHaveBeenCalledTimes(2)
+  })
+
+  it('T6-7: 取消处置完成弹窗时不调用接口', async () => {
+    const wrapper = await mountEvent()
+    ElMessageBox.prompt.mockRejectedValue('cancel')
+
+    await findButton(wrapper.findAll('.el-table__body tbody tr')[0], '处置完成').trigger('click')
+    await flushPromises()
+
+    // 先钉住弹窗确实被呼出过，否则「没调接口」可能是因为按钮压根没绑定
+    expect(ElMessageBox.prompt).toHaveBeenCalledTimes(1)
+    expect(resolveEvent).not.toHaveBeenCalled()
+  })
+
+  it('T6-8: 关闭事件二次确认后调用 closeEvent；取消则不调用', async () => {
+    const wrapper = await mountEvent()
+    const confirmSpy = vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue('confirm')
+    const row = () => wrapper.findAll('.el-table__body tbody tr')[0]
+
+    await findButton(row(), '关闭事件').trigger('click')
+    await flushPromises()
+
+    expect(confirmSpy).toHaveBeenCalledTimes(1)
+    expect(confirmSpy.mock.calls[0][0]).toContain('关闭')
+    expect(closeEvent).toHaveBeenCalledWith(1)
+    expect(getEmergencyEvents).toHaveBeenCalledTimes(2)
+
+    closeEvent.mockClear()
+    confirmSpy.mockRejectedValue('cancel')
+    await findButton(row(), '关闭事件').trigger('click')
+    await flushPromises()
+
+    expect(confirmSpy).toHaveBeenCalledTimes(2)
+    expect(closeEvent).not.toHaveBeenCalled()
+  })
+
+  it('T6-9: 无 emergency:resolve / emergency:close 权限时两个执行按钮均隐藏', async () => {
+    const wrapper = await mountEvent(['emergency:view', 'emergency:export'])
+
+    const texts = visibleButtonTexts(wrapper.findAll('.el-table__body tbody tr')[0])
+    expect(texts).toEqual(['详情', '报告'])
+  })
+
+  it('T6-10: 已关闭的事件不再提供处置完成与关闭事件', async () => {
+    getEmergencyEvents.mockResolvedValue({
+      data: { items: [event(1, { status: 'closed' })], total: 1 },
+    })
+    const wrapper = await mountEvent()
+
+    const texts = visibleButtonTexts(wrapper.findAll('.el-table__body tbody tr')[0])
+    expect(texts).toEqual(['详情', '报告'])
+    // 「报告」仍在，证明隐藏的是状态条件而不是整列没渲染
+    expect(texts).toContain('报告')
+  })
+
+  it('T6-11: 详情内时间轴按 emergency:timeline 权限决定可编辑或只读', async () => {
+    const editable = await mountEvent()
+    await findButton(editable.findAll('.el-table__body tbody tr')[0], '详情').trigger('click')
+    await flushPromises()
+    expect(findButton(editable.find('.overlay-stub'), '添加节点')).toBeTruthy()
+
+    const readOnly = await mountEvent(['emergency:view'])
+    await findButton(readOnly.findAll('.el-table__body tbody tr')[0], '详情').trigger('click')
+    await flushPromises()
+    expect(readOnly.find('.overlay-stub').find('.timeline-editor').exists()).toBe(true)
+    expect(findButton(readOnly.find('.overlay-stub'), '添加节点')).toBeFalsy()
   })
 })

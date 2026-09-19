@@ -54,6 +54,38 @@ export function deleteTimelineNode(nodeId) {
 }
 
 /**
+ * 标记应急事件处置完成（B5 / 权限 emergency:resolve）
+ *
+ * body 是**必填**的：后端把请求体声明成 `payload: dict`，不带 body 直接 422。
+ * summary 可留空，此时只流转状态、不写总结。
+ *
+ * @param {number} eventId
+ * @param {string} [summary] 处置总结
+ */
+export function resolveEvent(eventId, summary) {
+  return request({
+    url: `/emergency/events/${eventId}/resolve`,
+    method: 'post',
+    data: { summary: summary || null },
+  })
+}
+
+/**
+ * 关闭应急事件（B5 / 权限 emergency:close，后端标注为主管权限）
+ *
+ * 与 resolve 相反，这个端点**不接收 body**（后端签名只有 db / user），
+ * 所以不传 data。
+ *
+ * @param {number} eventId
+ */
+export function closeEvent(eventId) {
+  return request({
+    url: `/emergency/events/${eventId}/close`,
+    method: 'post',
+  })
+}
+
+/**
  * 导出应急事件报告（B6/F6）
  * 响应为 HTML Blob，由调用方触发浏览器下载
  * @param {number} eventId

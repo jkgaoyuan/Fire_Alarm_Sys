@@ -22,6 +22,8 @@ import {
   getEventTimelines,
   addTimelineNode,
   deleteTimelineNode,
+  resolveEvent,
+  closeEvent,
   exportEventReport,
   getNotifications,
   markNotificationRead,
@@ -96,6 +98,32 @@ describe('api/emergency.js', () => {
       url: '/notifications',
       method: 'get',
       params,
+    })
+  })
+
+  it('resolveEvent 调用 POST /emergency/events/:id/resolve 且总结放在 body', async () => {
+    await resolveEvent(7, '已扑灭')
+    expect(requestMock).toHaveBeenCalledWith({
+      url: '/emergency/events/7/resolve',
+      method: 'post',
+      data: { summary: '已扑灭' },
+    })
+  })
+
+  it('resolveEvent 总结留空时仍发送 body —— 后端 body 是必填，缺了直接 422', async () => {
+    await resolveEvent(7)
+    expect(requestMock).toHaveBeenCalledWith({
+      url: '/emergency/events/7/resolve',
+      method: 'post',
+      data: { summary: null },
+    })
+  })
+
+  it('closeEvent 调用 POST /emergency/events/:id/close 且不带 body', async () => {
+    await closeEvent(7)
+    expect(requestMock).toHaveBeenCalledWith({
+      url: '/emergency/events/7/close',
+      method: 'post',
     })
   })
 
