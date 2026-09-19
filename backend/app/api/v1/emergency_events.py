@@ -28,7 +28,11 @@ from app.services.emergency_service import (
     resolve_emergency_event,
     close_emergency_event,
     add_timeline_node,
+    event_payload,
+    timeline_payload,
+    user_brief,
 )
+from app.services.alarm_service import alarm_payload
 from app.services.emergency_report_service import generate_event_report
 
 router = APIRouter()
@@ -123,7 +127,7 @@ async def list_emergency_events(
     return {
         "code": 200,
         "data": {
-            "items": events,
+            "items": [event_payload(event) for event in events],
             "total": total,
             "page": page,
             "page_size": page_size,
@@ -151,9 +155,15 @@ async def get_emergency_event_detail(
     if not await check_data_scope(event_id, user, db):
         return {"code": 403, "message": "无权查看此事件"}
     
-    # 获取关联报警
+    # 获取关联报警。`alarm_payload` 要读 device / org，async 下不能靠懒加载
+    # （会抛 MissingGreenlet），必须显式预加载
+    from sqlalchemy.orm import selectinload
     from app.models.alarm import Alarm
-    alarm_stmt = select(Alarm).where(Alarm.id == event.alarm_id)
+    alarm_stmt = (
+        select(Alarm)
+        .where(Alarm.id == event.alarm_id)
+        .options(selectinload(Alarm.device), selectinload(Alarm.org))
+    )
     alarm = (await db.execute(alarm_stmt)).scalar_one_or_none()
     
     # 获取时间轴
@@ -173,11 +183,11 @@ async def get_emergency_event_detail(
     return {
         "code": 200,
         "data": {
-            "event": event,
-            "alarm": alarm,
-            "timelines": timelines,
-            "creator": creator,
-            "closer": closer
+            "event": event_payload(event),
+            "alarm": alarm_payload(alarm) if alarm else None,
+            "timelines": [timeline_payload(node) for node in timelines],
+            "creator": user_brief(creator),
+            "closer": user_brief(closer)
         }
     }
 
@@ -194,10 +204,13 @@ async def resolve_emergency_event_api(
     
     try:
         event = await resolve_emergency_event(db, event_id, summary, user.id)
-        
+        # service 层只 flush（与 create_emergency_event 一致，便于被别的写路径复用）；
+        # 事务边界归端点 —— get_db 不做提交，不 commit 等于操作被回滚
+        await db.commit()
+
         # TODO: WebSocket 广播事件更新
-        
-        return {"code": 200, "message": "处置完成", "data": event}
+
+        return {"code": 200, "message": "处置完成", "data": event_payload(event)}
     except ValueError as e:
         return {"code": 404, "message": str(e)}
 
@@ -211,10 +224,11 @@ async def close_emergency_event_api(
     """强制关闭应急事件（主管权限，P0）"""
     try:
         event = await close_emergency_event(db, event_id, user.id)
-        
+        await db.commit()
+
         # TODO: WebSocket 广播事件更新
-        
-        return {"code": 200, "message": "事件已关闭", "data": event}
+
+        return {"code": 200, "message": "事件已关闭", "data": event_payload(event)}
     except ValueError as e:
         return {"code": 404, "message": str(e)}
 
@@ -259,7 +273,7 @@ async def list_timelines(
     return {
         "code": 200,
         "data": {
-            "items": timelines,
+            "items": [timeline_payload(node) for node in timelines],
             "total": len(timelines)
         }
     }
@@ -285,10 +299,11 @@ async def create_timeline(
             description=description,
             attachments=attachments
         )
+        await db.commit()
 
         # TODO: WebSocket 广播新节点
 
-        return {"code": 200, "message": "添加成功", "data": timeline}
+        return {"code": 200, "message": "添加成功", "data": timeline_payload(timeline)}
     except Exception as e:
         return {"code": 400, "message": f"添加失败：{e}"}
 
