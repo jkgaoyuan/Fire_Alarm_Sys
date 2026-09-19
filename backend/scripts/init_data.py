@@ -175,13 +175,17 @@ ROLE_PERM_MAP = {
         "alarm:view", "alarm:confirm", "alarm:silence", "alarm:reset", "alarm:handle",
         "device:view",
         "repair:view", "repair:create",
-        "statistics:partial",
         # 3.9：查看统计
         "statistics:view",
         # 3.9：导出报表（这 4 个统计页已开放给值班员，缺此权限按钮必 403）
         "statistics:export",
         # 联动预案（值班员只能查看和执行）
-        "linkage:view", "linkage:execute",
+        #
+        # 与 emergency:event 同一处漏授：`linkage:plan` 是菜单码，缺它时
+        # view/execute 两个按钮权限同样进不去页面（注释却写着「只能查看和执行」，
+        # 说明本来就是要给他看的）。不加 `linkage:log`——那是二级菜单，
+        # 是否对值班员开放是另一个产品口径，不该顺带决定。
+        "linkage:plan", "linkage:view", "linkage:execute",
         # 应急处置（值班员可进入页面、参与时间轴记录；处置完成/关闭/导出仍限主管）
         #
         # `emergency:event` 是**菜单码**，此前漏授予。菜单树只取 perm_type='menu'
@@ -203,7 +207,6 @@ ROLE_PERM_MAP = {
         "inspection:execute",  # 仅可执行巡检，不可管理计划
         "inspection:stat",     # 可查看统计
         "repair:view", "repair:create", "repair:repair",
-        "statistics:partial",
         # 3.9：查看统计
         "statistics:view",
         # 3.9：导出报表（与值班员同理，页面可进但按钮原本必 403）
