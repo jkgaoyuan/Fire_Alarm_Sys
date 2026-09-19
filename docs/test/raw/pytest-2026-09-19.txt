@@ -1,0 +1,571 @@
+ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss............ [ 13%]
+........................................................................ [ 26%]
+........................................................................ [ 39%]
+...................F....FFFF.........xx.....x........................... [ 53%]
+........................................................................ [ 66%]
+......................................FFF...F........................... [ 79%]
+........................................................................ [ 92%]
+......................................                                   [100%]
+============================== warnings summary ===============================
+C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\lib\site-packages\pydantic\_internal\_config.py:284
+C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\lib\site-packages\pydantic\_internal\_config.py:284
+C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\lib\site-packages\pydantic\_internal\_config.py:284
+C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\lib\site-packages\pydantic\_internal\_config.py:284
+C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\lib\site-packages\pydantic\_internal\_config.py:284
+C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\lib\site-packages\pydantic\_internal\_config.py:284
+C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\lib\site-packages\pydantic\_internal\_config.py:284
+C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\lib\site-packages\pydantic\_internal\_config.py:284
+C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\lib\site-packages\pydantic\_internal\_config.py:284
+  C:\Users\gaoyuan\AppData\Local\Programs\Python\Python310\lib\site-packages\pydantic\_internal\_config.py:284: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.7/migration/
+    warnings.warn(DEPRECATION_MESSAGE, DeprecationWarning)
+
+tests/test_linkage_plan.py::TestLinkagePlanCRUD::test_create_linkage_plan
+  E:\pycharm\AI_PROJECT_CODE\Fire_Alarm_Sys\backend\app\crud\base.py:51: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
+    db.add(db_obj)
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_linkage_plan.py::TestLinkagePlanCRUD::test_update_linkage_plan
+  E:\pycharm\AI_PROJECT_CODE\Fire_Alarm_Sys\backend\app\crud\base.py:73: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
+    db.add(db_obj)
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+PASSED tests/test_alarm_confirm_emergency.py::test_confirm_real_fire_creates_emergency_event
+PASSED tests/test_alarm_confirm_emergency.py::test_confirm_real_fire_seeds_alarm_and_confirm_timeline
+PASSED tests/test_alarm_confirm_emergency.py::test_confirm_false_alarm_creates_no_event
+PASSED tests/test_alarm_confirm_emergency.py::test_confirm_drill_alarm_as_real_is_rejected
+PASSED tests/test_alarm_confirm_emergency.py::test_drill_alarm_can_still_be_marked_false_alarm
+PASSED tests/test_alarm_confirm_emergency.py::test_event_no_uses_business_timezone_not_container_utc
+PASSED tests/test_alarm_confirm_emergency.py::test_alarm_status_and_event_commit_together
+PASSED tests/test_alarm_crud.py::test_raise_alarm_snapshots_device_and_org
+PASSED tests/test_alarm_crud.py::test_raise_alarm_dedupes_open_alarm
+PASSED tests/test_alarm_crud.py::test_confirm_alarm_transitions
+PASSED tests/test_alarm_crud.py::test_false_alarm_requires_reason
+PASSED tests/test_alarm_crud.py::test_list_alarms_filters_and_data_scope
+PASSED tests/test_alarm_silence_reset.py::test_reset_requires_explicit_physical_confirmation
+PASSED tests/test_alarm_silence_reset.py::test_reset_rejects_when_device_not_recovered
+PASSED tests/test_alarm_silence_reset.py::test_reset_rejects_retired_and_shield_device
+PASSED tests/test_alarm_silence_reset.py::test_reset_commits_alarm_device_and_audit_together
+PASSED tests/test_alarm_silence_reset.py::test_reset_is_idempotent
+PASSED tests/test_alarm_silence_reset.py::test_silence_records_trace_without_changing_status
+PASSED tests/test_api_contract_regressions.py::test_alarm_out_exposes_reset_remark
+PASSED tests/test_api_contract_regressions.py::test_export_task_out_exposes_params
+PASSED tests/test_api_contract_regressions.py::test_export_route_registered_before_log_id_route
+PASSED tests/test_api_contract_regressions.py::test_vestigial_linkage_plans_logs_routes_removed
+PASSED tests/test_api_contract_regressions.py::test_linkage_toggle_accepts_explicit_state
+PASSED tests/test_api_contract_regressions.py::test_devices_include_deleted_and_restore
+PASSED tests/test_api_contract_regressions.py::test_roles_keyword_filter_actually_filters
+PASSED tests/test_api_envelope_contract.py::test_router_scan_is_not_empty
+PASSED tests/test_api_envelope_contract.py::test_json_endpoints_return_envelope
+PASSED tests/test_auth.py::test_login_success
+PASSED tests/test_auth.py::test_login_response_does_not_publish_roles
+PASSED tests/test_auth.py::test_login_wrong_password_remaining_attempts
+PASSED tests/test_auth.py::test_login_fifth_failure_locks_account
+PASSED tests/test_auth.py::test_login_during_lock_rejected
+PASSED tests/test_auth.py::test_refresh_token
+PASSED tests/test_auth.py::test_logout_blacklist
+PASSED tests/test_auth_service.py::test_parse_user_agent_desktop
+PASSED tests/test_auth_service.py::test_parse_user_agent_mobile
+PASSED tests/test_auth_service.py::test_parse_user_agent_none
+PASSED tests/test_auth_service.py::test_is_account_locked_active
+PASSED tests/test_auth_service.py::test_is_account_locked_still_locked
+PASSED tests/test_auth_service.py::test_is_account_locked_auto_unlock
+PASSED tests/test_auth_service.py::test_create_token_pair
+PASSED tests/test_auth_service.py::test_save_token_whitelist
+PASSED tests/test_auth_service.py::test_authenticate_success
+PASSED tests/test_auth_service.py::test_authenticate_wrong_password
+PASSED tests/test_auth_service.py::test_authenticate_user_not_found
+PASSED tests/test_auth_service.py::test_authenticate_disabled
+PASSED tests/test_auth_service.py::test_authenticate_locked
+PASSED tests/test_auth_service.py::test_login_user_success
+PASSED tests/test_auth_service.py::test_login_user_wrong_password
+PASSED tests/test_auth_service.py::test_login_user_locked
+PASSED tests/test_auth_service.py::test_refresh_access_token_success
+PASSED tests/test_auth_service.py::test_refresh_access_token_invalid_type
+PASSED tests/test_auth_service.py::test_refresh_access_token_not_in_whitelist
+PASSED tests/test_auth_service.py::test_logout_user
+PASSED tests/test_auth_service.py::test_record_login_log
+PASSED tests/test_crud_base.py::test_crud_get
+PASSED tests/test_crud_base.py::test_crud_get_not_found
+PASSED tests/test_crud_base.py::test_crud_get_multi
+PASSED tests/test_crud_base.py::test_crud_get_multi_skip
+PASSED tests/test_crud_base.py::test_crud_create
+PASSED tests/test_crud_base.py::test_crud_update_with_schema
+PASSED tests/test_crud_base.py::test_crud_update_with_dict
+PASSED tests/test_crud_base.py::test_crud_delete
+PASSED tests/test_crud_base.py::test_crud_delete_not_found
+PASSED tests/test_data_scope.py::test_data_scope_all
+PASSED tests/test_data_scope.py::test_data_scope_dept
+PASSED tests/test_data_scope.py::test_data_scope_self
+PASSED tests/test_device_crud.py::test_create_device
+PASSED tests/test_device_crud.py::test_create_device_duplicate_code_rejected
+PASSED tests/test_device_crud.py::test_create_device_invalid_attributes_rejected
+PASSED tests/test_device_crud.py::test_create_device_unknown_type_rejected
+PASSED tests/test_device_crud.py::test_create_device_invalid_status_rejected
+PASSED tests/test_device_crud.py::test_get_device_detail_and_404
+PASSED tests/test_device_crud.py::test_update_device
+PASSED tests/test_device_crud.py::test_update_device_code_conflict
+PASSED tests/test_device_crud.py::test_update_device_rejects_retired_via_put
+PASSED tests/test_device_crud.py::test_retire_device_flow
+PASSED tests/test_device_crud.py::test_retire_writes_status_log
+PASSED tests/test_device_crud.py::test_delete_device_is_soft_delete
+PASSED tests/test_device_crud.py::test_create_with_deleted_code_reports_restore_entry
+PASSED tests/test_device_crud.py::test_restore_soft_deleted_device
+PASSED tests/test_device_filter.py::test_keyword_matches_code_and_name
+PASSED tests/test_device_filter.py::test_combined_filters
+PASSED tests/test_device_filter.py::test_pagination_bounds
+PASSED tests/test_device_filter.py::test_retired_hidden_by_default
+PASSED tests/test_device_history.py::test_history_aggregates_status_changes
+PASSED tests/test_device_history.py::test_history_merges_inspection_and_repair
+PASSED tests/test_device_history.py::test_history_without_inspection_or_repair_is_still_empty
+PASSED tests/test_device_history.py::test_history_merges_alarms
+PASSED tests/test_device_history.py::test_history_empty_and_not_found
+PASSED tests/test_device_import.py::test_download_template
+PASSED tests/test_device_import.py::test_import_all_valid_rows
+PASSED tests/test_device_import.py::test_import_writes_archive_status_log
+PASSED tests/test_device_import.py::test_import_duplicate_code
+PASSED tests/test_device_import.py::test_import_duplicate_deleted_code_reports_restore_entry
+PASSED tests/test_device_import.py::test_import_unknown_org_and_type
+PASSED tests/test_device_import.py::test_import_attribute_validation_detail
+PASSED tests/test_device_import.py::test_import_rolls_back_when_failure_rate_too_high
+PASSED tests/test_device_import.py::test_import_rejects_bad_file
+PASSED tests/test_device_permission.py::test_data_scope_all_sees_everything
+PASSED tests/test_device_permission.py::test_data_scope_dept_limits_to_subtree
+PASSED tests/test_device_permission.py::test_data_scope_self_falls_back_to_dept
+PASSED tests/test_device_permission.py::test_self_scope_can_open_device_detail
+PASSED tests/test_device_permission.py::test_user_without_org_sees_nothing
+PASSED tests/test_device_permission.py::test_missing_permission_rejected
+PASSED tests/test_device_permission.py::test_duty_officer_cannot_write
+PASSED tests/test_device_report.py::test_report_updates_status_log_and_alarm
+PASSED tests/test_device_report.py::test_report_dedupes_same_open_alarm
+PASSED tests/test_device_report.py::test_report_recovery_creates_no_alarm
+PASSED tests/test_device_report.py::test_report_rejects_unknown_and_retired
+PASSED tests/test_device_report.py::test_scan_offline_only_touches_reportable_devices
+PASSED tests/test_device_report.py::test_report_endpoint_switch_and_key
+PASSED tests/test_device_scope.py::test_self_user_cannot_access_others_device_detail
+PASSED tests/test_device_scope.py::test_self_user_cannot_mutate_others_device
+PASSED tests/test_device_scope.py::test_self_user_can_access_devices_in_own_org
+PASSED tests/test_device_scope.py::test_dept_user_sees_same_org_not_sibling
+PASSED tests/test_device_scope.py::test_history_and_trajectory_respect_data_scope
+PASSED tests/test_device_scope.py::test_all_scope_user_can_access_any_device
+PASSED tests/test_device_type.py::test_preset_device_types_complete
+PASSED tests/test_device_type.py::test_validate_attributes_tolerates_bad_schema
+PASSED tests/test_device_type.py::test_device_types_list_requires_only_login
+PASSED tests/test_device_type.py::test_device_type_detail_and_404
+PASSED tests/test_drill_crud.py::TestDrillEventCRUD::test_create_drill
+PASSED tests/test_drill_crud.py::TestDrillEventCRUD::test_get_by_id
+PASSED tests/test_drill_crud.py::TestDrillEventCRUD::test_get_nonexistent
+PASSED tests/test_drill_crud.py::TestDrillEventCRUD::test_get_list_with_filters
+PASSED tests/test_drill_crud.py::TestDrillEventCRUD::test_get_list_pagination
+PASSED tests/test_drill_crud.py::TestDrillEventCRUD::test_update_drill
+PASSED tests/test_drill_crud.py::TestDrillEventCRUD::test_update_nonexistent
+PASSED tests/test_drill_crud.py::TestDrillEventCRUD::test_delete_drill
+PASSED tests/test_drill_crud.py::TestDrillEventCRUD::test_delete_drill_cascades_evaluation
+PASSED tests/test_drill_crud.py::TestEvaluationCRUD::test_create_evaluation
+PASSED tests/test_drill_crud.py::TestEvaluationCRUD::test_unique_constraint_drill_id
+PASSED tests/test_drill_crud.py::TestEvaluationCRUD::test_get_by_drill_id
+PASSED tests/test_drill_crud.py::TestEvaluationCRUD::test_update_evaluation_recalculates_score
+PASSED tests/test_drill_crud.py::TestDrillStatusFlow::test_execute_drill
+PASSED tests/test_drill_crud.py::TestDrillStatusFlow::test_complete_drill
+PASSED tests/test_drill_crud.py::TestDrillStatusFlow::test_cancel_drill
+PASSED tests/test_drill_crud.py::TestDrillStatusFlow::test_invalid_transition_completed_cannot_cancel
+PASSED tests/test_drill_crud.py::TestDrillStatusFlow::test_invalid_transition_planned_cannot_complete
+PASSED tests/test_drill_crud.py::TestDrillStatusFlow::test_invalid_transition_ongoing_cannot_execute
+PASSED tests/test_drill_crud.py::TestParticipantManagement::test_add_participant
+PASSED tests/test_drill_crud.py::TestParticipantManagement::test_add_duplicate_participant_updates_role
+PASSED tests/test_drill_crud.py::TestParticipantManagement::test_sign_in
+PASSED tests/test_drill_crud.py::TestParticipantManagement::test_sign_in_nonexistent_user
+PASSED tests/test_drill_crud.py::TestParticipantManagement::test_add_participant_nonexistent_drill
+PASSED tests/test_drill_crud.py::TestStatistics::test_get_drill_statistics
+PASSED tests/test_drill_crud.py::TestStatistics::test_statistics_empty_db
+PASSED tests/test_drill_crud.py::TestServiceBoundaryConditions::test_execute_nonexistent_drill
+PASSED tests/test_drill_crud.py::TestServiceBoundaryConditions::test_complete_nonexistent_drill
+PASSED tests/test_drill_crud.py::TestServiceBoundaryConditions::test_submit_duplicate_evaluation
+PASSED tests/test_drill_crud.py::TestServiceBoundaryConditions::test_submit_evaluation_nonexistent_drill
+PASSED tests/test_drill_crud.py::TestReportGeneration::test_generate_report_html
+PASSED tests/test_drill_crud.py::TestReportGeneration::test_generate_report_html_without_evaluation
+PASSED tests/test_drill_crud.py::TestReportGeneration::test_generate_report_nonexistent
+PASSED tests/test_drill_participants_api.py::test_candidates_require_drill_execute_not_system_user
+PASSED tests/test_drill_participants_api.py::test_candidates_return_lean_fields
+PASSED tests/test_drill_participants_api.py::test_candidates_exclude_disabled_users
+PASSED tests/test_drill_participants_api.py::test_create_drill_persists_participant_roles
+PASSED tests/test_drill_participants_api.py::test_update_drill_persists_participant_roles
+PASSED tests/test_drill_participants_api.py::test_role_defaults_to_participant_when_omitted
+PASSED tests/test_drill_participants_api.py::test_legacy_participant_user_ids_still_works
+PASSED tests/test_drill_participants_api.py::test_participants_include_user_name
+PASSED tests/test_drill_participants_api.py::test_stored_participants_do_not_contain_user_name
+PASSED tests/test_drill_participants_api.py::test_missing_user_yields_none_name_not_500
+PASSED tests/test_emergency_api_payload.py::test_event_list_serializes_orm_rows
+PASSED tests/test_emergency_api_payload.py::test_event_detail_serializes_nested_orm
+PASSED tests/test_emergency_api_payload.py::test_event_timeline_list_serializes_orm
+PASSED tests/test_emergency_api_payload.py::test_event_resolve_serializes_orm
+PASSED tests/test_emergency_api_payload.py::test_event_resolve_actually_persists
+PASSED tests/test_emergency_api_payload.py::test_add_timeline_node_persists
+PASSED tests/test_emergency_api_payload.py::test_event_close_persists
+PASSED tests/test_emergency_escalation.py::TestEscalationScan::test_scan_timeout_alarm
+PASSED tests/test_emergency_escalation.py::TestEscalationScan::test_excludes_drill_alarms
+PASSED tests/test_emergency_escalation.py::TestEscalationScan::test_resolved_alarms_not_scanned
+PASSED tests/test_emergency_event.py::TestEmergencyEventCreation::test_false_alarm_no_event
+PASSED tests/test_emergency_event.py::TestEmergencyTimeline::test_add_timeline_node
+PASSED tests/test_emergency_event.py::TestEmergencyResolution::test_resolve_event_with_summary
+PASSED tests/test_emergency_event.py::TestEdgeCases::test_cascade_behavior
+PASSED tests/test_emergency_fixtures.py::TestEdgeCases::test_duplicate_alarm_id_no_create
+PASSED tests/test_emergency_report.py::TestReportGeneration::test_html_report_structure
+PASSED tests/test_emergency_report.py::TestReportGeneration::test_report_includes_timelines
+PASSED tests/test_emergency_report.py::TestLargeReportHandling::test_large_report_202_response
+PASSED tests/test_emergency_report.py::TestLargeReportHandling::test_normal_size_report_success
+PASSED tests/test_emergency_report.py::TestReportFormatting::test_report_html_valid_structure
+PASSED tests/test_emergency_report.py::TestReportFormatting::test_report_contains_timestamps_properly_formatted
+PASSED tests/test_emergency_report.py::TestReportPermissions::test_nonexistent_event_returns_error
+PASSED tests/test_emergency_report.py::TestReportPermissions::test_report_with_missing_alarm_data
+PASSED tests/test_escalation_scan.py::test_pending_alarm_never_has_an_event_in_the_real_flow
+PASSED tests/test_inspection_api.py::test_unauthorized_access
+PASSED tests/test_inspection_api.py::test_list_empty_plans
+PASSED tests/test_inspection_api.py::test_create_valid_plan
+PASSED tests/test_inspection_api.py::test_invalid_cycle_type
+PASSED tests/test_inspection_api.py::test_get_plan_detail
+PASSED tests/test_inspection_api.py::test_update_plan
+PASSED tests/test_inspection_api.py::test_delete_disabled_plan
+PASSED tests/test_inspection_api.py::test_delete_enabled_plan_fails
+PASSED tests/test_inspection_api.py::test_toggle_plan_status
+PASSED tests/test_inspection_api.py::test_write_success_envelope_code_is_200
+PASSED tests/test_inspection_api.py::test_generate_tasks_are_committed
+PASSED tests/test_inspection_api.py::test_generate_tasks
+PASSED tests/test_inspection_api.py::test_generate_tasks_without_body
+PASSED tests/test_inspection_api.py::test_toggle_without_body_flips_status
+PASSED tests/test_inspection_api.py::test_insufficient_permission_returns_403
+PASSED tests/test_inspection_data_scope.py::test_default_window_includes_future_tasks
+PASSED tests/test_inspection_data_scope.py::test_explicit_end_date_still_narrows
+PASSED tests/test_inspection_data_scope.py::test_all_scope_sees_every_task
+PASSED tests/test_inspection_data_scope.py::test_self_scope_sees_only_own_tasks
+PASSED tests/test_inspection_data_scope.py::test_dept_scope_sees_subtree_only
+PASSED tests/test_inspection_data_scope.py::test_scope_applies_to_total_not_just_items
+PASSED tests/test_inspection_records.py::test_submit_record_returns_device_fields
+PASSED tests/test_inspection_records.py::test_submit_record_reports_inspector_name
+PASSED tests/test_inspection_records.py::test_submit_record_is_persisted
+PASSED tests/test_inspection_records.py::test_list_records_returns_device_fields
+PASSED tests/test_inspection_records.py::test_task_list_reports_records_count
+PASSED tests/test_inspection_records.py::test_list_response_has_no_dead_records_field
+PASSED tests/test_inspection_records.py::test_submit_abnormal_record_links_repair_order
+PASSED tests/test_inspection_records.py::test_task_list_filters_by_plan_id
+PASSED tests/test_inspection_records.py::test_records_for_named_task_ignore_default_month_window
+PASSED tests/test_inspection_scheduler.py::test_generates_for_enabled_plans_only
+PASSED tests/test_inspection_scheduler.py::test_respects_plan_validity_window
+PASSED tests/test_inspection_scheduler.py::test_is_idempotent
+PASSED tests/test_inspection_scheduler.py::test_tasks_are_committed
+PASSED tests/test_inspection_scheduler.py::test_one_failing_plan_does_not_abort_the_batch
+PASSED tests/test_inspection_scheduler.py::test_no_enabled_plans_is_a_noop
+PASSED tests/test_inspection_scheduler.py::test_is_cycle_due_follows_calendar_rules
+PASSED tests/test_inspection_scheduler.py::test_generate_respects_cycle_type
+PASSED tests/test_inspection_scheduler.py::test_duplicate_error_classifier_covers_postgres_branch
+PASSED tests/test_inspection_scheduler.py::test_duplicate_error_classifier_covers_sqlite_text
+PASSED tests/test_inspection_scheduler.py::test_next_run_today_when_time_not_reached
+PASSED tests/test_inspection_scheduler.py::test_next_run_tomorrow_when_time_passed
+PASSED tests/test_inspection_scheduler.py::test_next_run_at_exact_time_rolls_to_tomorrow
+PASSED tests/test_inspection_scheduler.py::test_next_run_rejects_naive_datetime
+PASSED tests/test_inspection_scheduler.py::test_next_run_normalises_utc_input_to_business_timezone
+PASSED tests/test_inspection_scheduler.py::test_business_today_differs_from_utc_today_before_8am
+PASSED tests/test_inspection_scheduler.py::test_duplicate_plan_date_is_rejected_by_db
+PASSED tests/test_inspection_scheduler.py::test_generate_treats_unique_violation_as_skipped
+PASSED tests/test_inspection_task_devices.py::test_maintainer_with_self_scope_can_see_required_devices
+PASSED tests/test_inspection_task_devices.py::test_excludes_devices_outside_plan_scope
+PASSED tests/test_inspection_task_devices.py::test_plan_without_device_type_returns_all_types
+PASSED tests/test_inspection_task_devices.py::test_carries_type_and_org_display_names
+PASSED tests/test_inspection_task_devices.py::test_user_who_cannot_see_task_cannot_see_its_devices
+PASSED tests/test_inspection_task_devices.py::test_requires_execute_permission
+PASSED tests/test_inspection_task_devices.py::test_unknown_task_returns_404
+PASSED tests/test_inspection_task_devices.py::test_keyword_filters_within_scope
+PASSED tests/test_linkage_engine.py::TestActionExecution::test_execute_start_exhaust_success
+PASSED tests/test_linkage_engine.py::TestActionExecution::test_execute_close_door_success
+PASSED tests/test_linkage_engine.py::TestActionExecution::test_delayed_execution_hint
+PASSED tests/test_linkage_engine.py::TestSecondaryAlarmGeneration::test_create_secondary_alarm_on_failure
+PASSED tests/test_linkage_engine_e2e.py::test_successful_action_stays_success
+PASSED tests/test_linkage_engine_e2e.py::test_broadcast_failure_does_not_flip_status
+PASSED tests/test_linkage_engine_e2e.py::test_failed_action_creates_secondary_alarm
+PASSED tests/test_linkage_engine_e2e.py::test_plan_in_other_org_does_not_match
+PASSED tests/test_linkage_engine_e2e.py::test_drill_alarm_skips_plan_with_simulation_disabled
+PASSED tests/test_linkage_engine_e2e.py::test_drill_alarm_still_fires_enabled_plan
+PASSED tests/test_linkage_engine_e2e.py::test_real_alarm_ignores_simulation_switch
+PASSED tests/test_linkage_logs.py::TestLinkageLogsQuery::test_get_logs_by_alarm
+PASSED tests/test_linkage_logs.py::TestLinkageLogsQuery::test_get_logs_by_plan
+PASSED tests/test_linkage_logs.py::TestLinkageLogsQuery::test_get_logs_by_status_success
+PASSED tests/test_linkage_logs.py::TestLinkageLogsQuery::test_get_logs_by_status_failed
+PASSED tests/test_linkage_logs.py::TestLogExport::test_export_csv_format
+PASSED tests/test_linkage_logs.py::TestLogExport::test_export_10k_limit
+PASSED tests/test_linkage_logs_api.py::test_list_requires_authentication
+PASSED tests/test_linkage_logs_api.py::test_list_requires_view_permission
+PASSED tests/test_linkage_logs_api.py::test_sibling_endpoints_keep_their_auth
+PASSED tests/test_linkage_logs_api.py::test_list_returns_envelope
+PASSED tests/test_linkage_logs_api.py::test_detail_returns_envelope
+PASSED tests/test_linkage_logs_api.py::test_list_carries_display_fields
+PASSED tests/test_linkage_logs_api.py::test_list_marks_drill_logs
+PASSED tests/test_linkage_logs_api.py::test_detail_carries_display_fields
+PASSED tests/test_linkage_plan.py::TestLinkagePlanCRUD::test_create_linkage_plan
+PASSED tests/test_linkage_plan.py::TestLinkagePlanCRUD::test_get_linkage_plan
+PASSED tests/test_linkage_plan.py::TestLinkagePlanCRUD::test_update_linkage_plan
+PASSED tests/test_linkage_plan.py::TestLinkagePlanCRUD::test_get_multi_by_org
+PASSED tests/test_linkage_plan.py::TestAlarmLinkageLogCRUD::test_get_logs_by_alarm
+PASSED tests/test_linkage_plan.py::TestAlarmLinkageLogCRUD::test_count_plan_logs
+PASSED tests/test_linkage_plan.py::TestDeleteProtection::test_cannot_delete_with_logs
+PASSED tests/test_linkage_plans_api.py::test_list_requires_authentication
+PASSED tests/test_linkage_plans_api.py::test_list_requires_view_permission
+PASSED tests/test_linkage_plans_api.py::test_list_accessible_with_view_permission
+PASSED tests/test_linkage_plans_api.py::test_sibling_endpoints_keep_their_auth
+PASSED tests/test_linkage_plans_api.py::test_list_returns_envelope
+PASSED tests/test_linkage_plans_api.py::test_detail_not_found_keeps_404
+PASSED tests/test_linkage_plans_api.py::test_create_returns_envelope
+PASSED tests/test_linkage_plans_api.py::test_execute_requires_plan_id
+PASSED tests/test_linkage_plans_api.py::test_execute_works_with_plan_id
+PASSED tests/test_linkage_plans_api.py::test_execute_result_is_nested_not_flattened
+PASSED tests/test_linkage_plans_api.py::test_list_returns_org_name
+PASSED tests/test_linkage_plans_api.py::test_detail_returns_org_name
+PASSED tests/test_linkage_plans_api.py::test_create_returns_org_name_immediately
+PASSED tests/test_linkage_plans_api.py::test_org_name_is_null_when_org_missing
+PASSED tests/test_linkage_plans_api.py::test_simulate_creates_drill_alarm_through_engine
+PASSED tests/test_linkage_plans_api.py::test_simulate_alarm_is_visible_as_drill
+PASSED tests/test_linkage_plans_api.py::test_simulate_broadcasts_alarm_new_frame
+PASSED tests/test_linkage_plans_api.py::test_simulate_repeat_does_not_rebroadcast
+PASSED tests/test_linkage_plans_api.py::test_simulate_rejected_when_plan_disabled
+PASSED tests/test_linkage_plans_api.py::test_simulation_switch_persists
+PASSED tests/test_linkage_plans_api.py::test_simulate_rejected_without_device_in_org
+PASSED tests/test_linkage_plans_api.py::test_simulate_refuses_to_reuse_real_alarm
+PASSED tests/test_linkage_plans_api.py::test_simulate_is_idempotent_on_repeat
+PASSED tests/test_linkage_plans_api.py::test_simulate_rejects_unmatchable_trigger_type
+PASSED tests/test_linkage_plans_api.py::test_simulate_rejects_contradictory_trigger_config
+PASSED tests/test_linkage_quick.py::test_linkage_executor
+PASSED tests/test_linkage_quick.py::test_linkage_schema
+PASSED tests/test_linkage_quick.py::test_crud_interface
+PASSED tests/test_linkage_quick.py::test_model_structure
+PASSED tests/test_login_log_api.py::test_get_login_logs_success
+PASSED tests/test_login_log_api.py::test_get_login_logs_pagination
+PASSED tests/test_login_log_api.py::test_get_login_logs_filter_by_username
+PASSED tests/test_login_log_api.py::test_get_login_logs_filter_by_status
+PASSED tests/test_login_log_api.py::test_get_login_logs_filter_by_time_range
+PASSED tests/test_login_log_api.py::test_get_login_logs_forbidden
+PASSED tests/test_map_image.py::test_wide_floor_plan_is_downscaled_and_basis_recorded
+PASSED tests/test_map_image.py::test_pdf_first_page_converted_to_png
+PASSED tests/test_map_image.py::test_forged_mime_and_oversize_rejected
+PASSED tests/test_map_image.py::test_upload_requires_config_permission
+PASSED tests/test_map_image.py::test_delete_map_image_clears_basis_and_files
+PASSED tests/test_models_bigint_pk.py::test_bigint_pk_renders_integer_on_sqlite
+PASSED tests/test_models_bigint_pk.py::test_bigint_pk_stays_64bit_on_postgresql
+PASSED tests/test_models_bigint_pk.py::test_emergency_domain_rows_persist_without_explicit_id[emergency_events]
+PASSED tests/test_models_bigint_pk.py::test_emergency_domain_rows_persist_without_explicit_id[emergency_timelines]
+PASSED tests/test_models_bigint_pk.py::test_emergency_domain_rows_persist_without_explicit_id[notifications]
+PASSED tests/test_monitor_api.py::test_dashboard_status_scope_and_region_drill
+PASSED tests/test_monitor_api.py::test_recent_alarms_pins_unconfirmed_fire
+PASSED tests/test_monitor_api.py::test_map_devices_filters_by_viewport_and_scope
+PASSED tests/test_monitor_api.py::test_map_devices_excludes_drill_from_active_alarm
+PASSED tests/test_monitor_api.py::test_map_devices_aggregates_when_over_limit
+PASSED tests/test_notifications.py::TestNotificationList::test_list_notifications_with_pagination
+PASSED tests/test_notifications.py::TestNotificationList::test_filter_by_module
+PASSED tests/test_notifications.py::TestNotificationList::test_owner_only_access
+PASSED tests/test_notifications.py::TestUnreadCount::test_get_unread_count
+PASSED tests/test_notifications.py::TestUnreadCount::test_unread_count_all_read
+PASSED tests/test_notifications.py::TestUnreadCount::test_unread_count_all_unread
+PASSED tests/test_notifications.py::TestNotificationEdgeCases::test_empty_user_has_zero_unread
+PASSED tests/test_notifications.py::TestNotificationEdgeCases::test_large_number_of_notifications
+PASSED tests/test_notifications.py::TestNotificationEdgeCases::test_long_title_and_content
+PASSED tests/test_organization.py::test_organizations_flat_list
+PASSED tests/test_organization.py::test_organizations_tree_nesting_and_order
+PASSED tests/test_organization.py::test_organizations_tree_promotes_orphans
+PASSED tests/test_organization.py::test_organizations_require_login
+PASSED tests/test_organization_crud.py::test_create_org
+PASSED tests/test_organization_crud.py::test_create_org_with_parent
+PASSED tests/test_organization_crud.py::test_create_org_invalid_type
+PASSED tests/test_organization_crud.py::test_create_org_invalid_parent
+PASSED tests/test_organization_crud.py::test_update_org
+PASSED tests/test_organization_crud.py::test_update_org_not_found
+PASSED tests/test_organization_crud.py::test_delete_org
+PASSED tests/test_organization_crud.py::test_delete_org_with_children
+PASSED tests/test_organization_crud.py::test_create_org_without_permission
+PASSED tests/test_organization_crud.py::test_create_org_requires_login
+PASSED tests/test_permission_coverage.py::test_scan_is_not_empty
+PASSED tests/test_permission_coverage.py::test_every_button_code_is_enforced_or_allowlisted
+PASSED tests/test_permission_coverage.py::test_allowlist_is_not_stale
+PASSED tests/test_permission_coverage.py::test_allowlist_entries_are_still_defined
+PASSED tests/test_permission_coverage.py::test_no_ghost_codes
+PASSED tests/test_repair_authz.py::test_list_requires_authentication
+PASSED tests/test_repair_authz.py::test_list_requires_view_permission
+PASSED tests/test_repair_authz.py::test_assign_requires_assign_permission
+PASSED tests/test_repair_authz.py::test_complete_requires_repair_permission
+PASSED tests/test_repair_authz.py::test_all_scope_sees_everything
+PASSED tests/test_repair_authz.py::test_self_scope_sees_only_related_orders
+PASSED tests/test_repair_authz.py::test_self_scope_includes_assigned_repairer
+PASSED tests/test_repair_authz.py::test_dept_scope_uses_device_org
+PASSED tests/test_repair_authz.py::test_total_matches_items
+PASSED tests/test_repair_authz.py::test_out_of_scope_detail_returns_404
+PASSED tests/test_repair_authz.py::test_in_scope_detail_survives_fresh_session
+PASSED tests/test_repair_orders.py::TestRepairOrderModel::test_repair_order_status_enum
+PASSED tests/test_repair_orders.py::TestRepairOrderModel::test_repair_order_status_transitions
+PASSED tests/test_repair_orders.py::TestRepairOrderSchema::test_repair_order_create_schema
+PASSED tests/test_repair_orders.py::TestRepairOrderSchema::test_repair_order_assign_schema
+PASSED tests/test_repair_orders.py::TestRepairOrderSchema::test_repair_order_complete_schema
+PASSED tests/test_repair_orders.py::TestRepairOrderSchema::test_repair_order_return_schema
+PASSED tests/test_repair_orders.py::TestRepairOrderCRUD::test_generate_order_no
+PASSED tests/test_repair_orders.py::TestRepairOrderCRUD::test_get_by_inspection_record_not_found
+PASSED tests/test_repair_orders.py::TestInspectionAutoCreateRepair::test_inspection_result_abnormal_triggers_repair
+PASSED tests/test_repair_orders.py::TestInspectionAutoCreateRepair::test_inspection_result_normal_no_repair
+PASSED tests/test_repair_start.py::test_start_requires_authentication
+PASSED tests/test_repair_start.py::test_start_requires_repair_permission
+PASSED tests/test_repair_start.py::test_start_by_non_assignee_is_forbidden
+PASSED tests/test_repair_start.py::test_start_moves_assigned_to_repairing
+PASSED tests/test_repair_start.py::test_start_moves_returned_to_repairing
+PASSED tests/test_repair_start.py::test_start_commits_status_change
+PASSED tests/test_repair_start.py::test_start_rejects_unassigned_pending_order
+PASSED tests/test_repair_start.py::test_start_rejects_pending_state_for_assignee
+PASSED tests/test_repair_start.py::test_start_rejects_pending_accept_order
+PASSED tests/test_repair_start.py::test_start_missing_order_returns_404
+PASSED tests/test_report_export.py::test_create_export_task
+PASSED tests/test_report_export.py::test_create_export_task_missing_task_type
+PASSED tests/test_report_export.py::test_get_export_task_status
+PASSED tests/test_report_export.py::test_list_my_export_tasks
+PASSED tests/test_report_export.py::test_export_task_survives_session_teardown
+PASSED tests/test_report_export.py::test_background_export_completes_task
+PASSED tests/test_report_export.py::test_async_export_task_committed_before_handoff
+PASSED tests/test_report_export.py::test_same_type_same_day_exports_do_not_share_a_file
+PASSED tests/test_report_export.py::test_export_requires_export_permission
+PASSED tests/test_report_export.py::test_export_tasks_requires_export_permission
+PASSED tests/test_report_export.py::test_unauthenticated_export_request
+PASSED tests/test_role.py::test_get_roles_pagination
+PASSED tests/test_role.py::test_get_roles_filter_by_role_code
+PASSED tests/test_role.py::test_get_roles_filter_by_role_name
+PASSED tests/test_role.py::test_create_role_with_permissions
+PASSED tests/test_role.py::test_update_role_and_rebind_permissions
+PASSED tests/test_role.py::test_delete_role_success
+PASSED tests/test_role.py::test_delete_builtin_role_forbidden
+PASSED tests/test_role.py::test_delete_role_with_users_forbidden
+PASSED tests/test_role.py::test_get_role_permissions_list
+PASSED tests/test_role.py::test_role_api_permission_denied
+PASSED tests/test_role_permission_hierarchy.py::test_every_granted_code_is_defined
+PASSED tests/test_role_permission_hierarchy.py::test_every_granted_code_has_its_parent_granted
+PASSED tests/test_role_permission_hierarchy.py::test_chief_grant_is_by_full_binding_not_a_hardcoded_list
+PASSED tests/test_schema_field_defaults.py::test_emergency_timeline_attachments_default_is_instance
+PASSED tests/test_schema_field_defaults.py::test_linkage_plan_actions_default_is_instance
+PASSED tests/test_statistics.py::test_device_status_distribution
+PASSED tests/test_statistics.py::test_device_status_drill_down
+PASSED tests/test_statistics.py::test_alarm_trend
+PASSED tests/test_statistics.py::test_alarm_trend_exclude_drill
+PASSED tests/test_statistics.py::test_fault_top10
+PASSED tests/test_statistics.py::test_inspection_completion
+PASSED tests/test_statistics.py::test_overview
+PASSED tests/test_statistics.py::test_statistics_requires_view_permission
+PASSED tests/test_statistics.py::test_statistics_view_only_user_can_view
+PASSED tests/test_statistics_e2e_integration.py::test_e2e_export_workflow
+PASSED tests/test_statistics_e2e_integration.py::test_e2e_permission_denial
+PASSED tests/test_statistics_e2e_integration.py::test_e2e_task_pagination
+PASSED tests/test_trajectory.py::test_trajectory_window_boundaries
+PASSED tests/test_trajectory.py::test_trajectory_rejects_invalid_window
+PASSED tests/test_trajectory.py::test_trajectory_export_matches_query
+PASSED tests/test_user.py::test_get_me_success
+PASSED tests/test_user.py::test_get_me_unauthorized
+PASSED tests/test_user.py::test_get_my_menus
+PASSED tests/test_user.py::test_get_my_permissions
+PASSED tests/test_user.py::test_get_permissions_tree_forbidden
+PASSED tests/test_user.py::test_get_permissions_tree_success
+PASSED tests/test_user_management.py::test_get_users_list_success
+PASSED tests/test_user_management.py::test_get_users_forbidden
+PASSED tests/test_user_management.py::test_create_user_success
+PASSED tests/test_user_management.py::test_create_user_duplicate_username
+PASSED tests/test_user_management.py::test_update_user_success
+PASSED tests/test_user_management.py::test_update_user_not_found
+PASSED tests/test_user_management.py::test_disable_and_enable_user
+PASSED tests/test_user_management.py::test_unlock_user_clears_lock
+PASSED tests/test_user_management.py::test_cannot_self_disable
+PASSED tests/test_user_management.py::test_assign_roles_to_user
+PASSED tests/test_user_management.py::test_reset_password_success
+PASSED tests/test_user_management.py::test_delete_user_success
+PASSED tests/test_user_management.py::test_cannot_self_delete
+PASSED tests/test_user_management.py::test_get_all_roles
+PASSED tests/test_user_management.py::test_user_list_keyword_filter
+PASSED tests/test_user_management.py::test_user_list_permission_filter
+PASSED tests/test_user_management.py::test_permission_filter_applies_to_total
+PASSED tests/test_user_management.py::test_permission_filter_is_optional
+PASSED tests/test_user_service.py::test_get_user_with_roles_success
+PASSED tests/test_user_service.py::test_get_user_with_roles_not_found
+PASSED tests/test_user_service.py::test_apply_data_scope_all
+PASSED tests/test_user_service.py::test_apply_data_scope_self
+PASSED tests/test_user_service.py::test_apply_data_scope_self_no_created_by_field
+PASSED tests/test_user_service.py::test_apply_data_scope_dept
+PASSED tests/test_user_service.py::test_apply_data_scope_dept_no_org_id
+PASSED tests/test_user_service.py::test_apply_data_scope_dept_no_org_id_field
+PASSED tests/test_user_service.py::test_apply_data_scope_unknown_scope
+PASSED tests/test_ws_data_scope.py::test_dept_connection_only_receives_own_region
+PASSED tests/test_ws_data_scope.py::test_self_scope_degrades_to_region
+PASSED tests/test_ws_data_scope.py::test_unrestricted_lookup_without_org_receives_no_scoped_event
+PASSED tests/test_ws_data_scope.py::test_out_of_region_alarm_is_silent_for_dept
+PASSED tests/test_ws_realtime.py::test_ws_ticket_is_one_time
+PASSED tests/test_ws_realtime.py::test_handshake_rejects_invalid_ticket
+PASSED tests/test_ws_realtime.py::test_report_events_fan_out_to_client
+PASSED tests/test_ws_realtime.py::test_client_ping_and_server_heartbeat
+PASSED tests/test_ws_realtime.py::test_reconnect_replays_missed_frames
+PASSED tests/test_ws_realtime.py::test_replay_overflow_and_trimmed_breakpoint_require_resync
+SKIPPED [1] tests\e2e\test_device_api_e2e.py:80: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_device_api_e2e.py:89: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_device_api_e2e.py:96: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_device_api_e2e.py:107: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_device_api_e2e.py:132: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_device_api_e2e.py:141: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_device_api_e2e.py:152: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_device_api_e2e.py:163: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_device_api_e2e.py:191: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_device_api_e2e.py:204: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_device_api_e2e.py:222: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_device_api_e2e.py:238: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_device_api_e2e.py:244: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_device_api_e2e.py:258: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_device_api_e2e.py:263: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [8] tests\e2e\test_device_api_e2e.py:272: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_device_api_e2e.py:292: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_device_api_e2e.py:299: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_device_api_e2e.py:304: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_device_api_e2e.py:312: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_device_api_e2e.py:329: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_device_api_e2e.py:353: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_device_api_e2e.py:372: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_device_api_e2e.py:388: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_device_api_e2e.py:406: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_inspection_e2e.py:84: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_inspection_e2e.py:129: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_inspection_e2e.py:143: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_inspection_e2e.py:165: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_inspection_e2e.py:184: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_linkage_e2e.py:15: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_linkage_e2e.py:115: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_linkage_e2e.py:165: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_linkage_e2e.py:213: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_monitor_e2e.py:175: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_monitor_e2e.py:194: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_monitor_e2e.py:237: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_monitor_e2e.py:266: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_monitor_e2e.py:307: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_monitor_e2e.py:374: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_monitor_e2e.py:411: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_monitor_e2e.py:443: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_monitor_e2e.py:465: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_monitor_e2e.py:496: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_monitor_e2e.py:514: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_monitor_e2e.py:547: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_monitor_e2e.py:568: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_monitor_e2e.py:620: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_monitor_e2e.py:650: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_monitor_e2e.py:676: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_statistics_e2e.py:14: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_statistics_e2e.py:91: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+SKIPPED [1] tests\e2e\test_statistics_e2e.py:118: 未设置 E2E_BASE_URL，跳过端到端回归（需真实后端容器）
+XFAIL tests/test_escalation_scan.py::test_overdue_pending_alarm_notifies_chief - 升级扫描在 emergency_service.py:177 懒加载崩溃（成因一）
+XFAIL tests/test_escalation_scan.py::test_scanner_does_not_raise_on_overdue_alarm - 升级扫描在 emergency_service.py:177 懒加载崩溃（成因一）
+XFAIL tests/test_inspection_api.py::test_empty_plan_name - 后端 InspectionPlanCreate.plan_name 只有 max_length 无 min_length，空字符串可通过校验（HTTP 201）；前端表单已强制必填，期望后端对齐返回 422
+FAILED tests/test_emergency_event.py::TestEmergencyEventCreation::test_create_event_on_real_alarm
+FAILED tests/test_emergency_fixtures.py::TestEmergencyEventCreation::test_create_event_on_real_alarm
+FAILED tests/test_emergency_fixtures.py::TestEmergencyEventCreation::test_false_alarm_no_event
+FAILED tests/test_emergency_fixtures.py::TestEmergencyTimeline::test_add_timeline_node
+FAILED tests/test_emergency_fixtures.py::TestEmergencyTimeline::test_cascade_delete_timeline
+FAILED tests/test_notifications.py::TestMarkAsRead::test_mark_single_as_read
+FAILED tests/test_notifications.py::TestMarkAsRead::test_cannot_mark_other_users_notifications
+FAILED tests/test_notifications.py::TestMarkAsRead::test_mark_nonexistent_notifications
+FAILED tests/test_notifications.py::TestNotificationConcurrency::test_concurrent_mark_read
+9 failed, 470 passed, 60 skipped, 3 xfailed, 11 warnings in 156.11s (0:02:36)
