@@ -237,6 +237,87 @@
 
 ---
 
+## DEC-024：演练告警**不上**大屏统计卡片 —— 这是 FR-045 隔离，不是缺陷
+
+- **决策**: 大屏「报警设备」卡片（`d.alarm`，来自 `devices.status`）**不**为演练告警做任何改动。用户最初提出的「模拟火警为什么不上这张卡片」诉求，经查证后**由用户明确放弃**（`[-]`）。
+- **原因**:
+  1. 该卡片读 `devices.status`（`monitor_service.py:104-114` 按 **devices 表**聚合），而该字段全仓库**唯一写入方是上报入库** `device_report_service.py:97`。模拟端点走 `raise_alarm`（`alarm_service.py:134-171`），**只 INSERT `alarms` 行、从不碰 `device.status`** → 两层数据源不同，卡片必然为 0。
+  2. 另有**三处 `is_drill` 过滤**（`AlarmList.vue:75`、`stores/monitor.js:76`、`monitor_service.py:122`）全部源于 **FR-045（P0 演练数据隔离）**，且是**首版即写入**的（`docs/plan/3.3:36/171`「`alarms.is_drill` 首版即写入并默认过滤」）。**是设计，不是漏了。**
+  3. 真实火警走**上报通道**时该卡片会正常联动——已实测：`POST /monitor/report` 造 `alarm_id=6` → 设备 `normal→alarm` → 卡片 **0→1**。**同一条告警，走哪条路决定了它上不上那张卡片。**
+- **影响范围**: 无代码改动。结论已写入会话文件与 CLAUDE.md 摘要
+- **来源会话**: 2026-09-19 12:59
+- **重估条件**: 若产品口径变更为「大屏需展示演练数据」，正确做法是**加显式的「含演练」开关**（与报警中心 `Center.vue:63` 一致），而**不是**让模拟端点去翻转 `devices.status`——后者无法按演练过滤（`devices` 表**没有** `is_drill` 维度），会让演练永久污染真实设备状态
+
+## DEC-025：模拟端点补广播，但大屏两处派生量一律排除演练
+
+- **决策**: `POST /linkage-plans/{id}/simulate` 补 `publish(redis, "alarm_new", ...)`（仅在**新建**告警时）；同时 `pendingFireCount`（大屏 tab 徽标）与 `activeAlarmDeviceIds`（地图点位着色）**排除演练**。
+- **原因**:
+  1. `linkage_plans.py` 全文 `publish`/`redis` **零命中**，而另外两条产生告警的路径都广播（`device_report_service.py:144`、`linkage_engine_service.py:198/219`）——一条路径少做两件事，默认应理解为**漏了**。
+  2. 频道**本就该传演练帧**：`alarm_payload` 带 `is_drill`（`alarm_service.py:99`），该字段存在的唯一理由就是让消费端能过滤；`Center.vue:363-372` 把 WS 帧与 REST 结果合并、再统一过 `matchesFilters` 的 `include_drill` 判断（:402）——「演练帧流进来、由开关决定显隐」是**已在使用**的路径。
+  3. **必须先堵两个洞再补广播**：大屏报警列表无条件滤掉演练（`AlarmList.vue:75`），故徽标与地图着色若还算进去，会出现「**徽标 1、列表空**」「地图红、列表空」——比什么都不显示更难解释。
+  4. 另修 `_active_alarm_map`（`monitor_service.py:310`）——它**也没有** `is_drill` 过滤，即地图其实**早已**把演练算红（只是走 REST 而非 WS）。不是新引入的，但必须与前端一次修齐，否则地图自身矛盾。
+- **影响范围**: `backend/app/api/v1/linkage_plans.py`、`backend/app/services/monitor_service.py`、`frontend/src/stores/monitor.js`。`AlarmList.vue` 与 `Center.vue` **一行未动**（前者本就在过滤，后者本来就正确）
+- **来源会话**: 2026-09-19 12:59（commit `cd8ea68a`）
+- **回滚条件**: 若演练帧误鸣笛，说明 `is_drill` 判断被绕过——前端 `stores/monitor.js:207/211` 的 `!payload.is_drill` 是唯一的拦阻点
+
+## DEC-026：应急事件页的「执行」入口用 `ElMessageBox`，不新写弹窗组件
+
+- **决策**: `Event.vue` 的「处置完成」用 `ElMessageBox.prompt`、「关闭事件」用 `ElMessageBox.confirm`，**不新写 dialog 组件**。
+- **原因**:
+  1. 这是仓库既有模式（`Archive.vue:408` 的删除/恢复二次确认、`Plan.spec.js:261` 的测试桩法），照抄即可。
+  2. **避开 2026-09-14 那个弹窗家族陷阱**：本仓曾同时三处（`RecordViewer` / `StatsDialog` / `PlanDetail`）出现「声明了 `modelValue` 却把浮层的 `v-model` 绑在各自局部 `ref(false)` 上」→ 弹窗永远打不开且不报错。`ElMessageBox` 由 Element Plus 自行管理可见性，**没有 `modelValue` 契约可写坏**。
+  3. `visibleDialogStub()` 那套纪律（testing-guidelines 第 31 条）只为自研弹窗组件准备；走 `ElMessageBox` 时用 `vi.mock('element-plus')` 替换 `prompt`/`confirm` 即可（同 `Archive.spec.js:23-33`）。
+- **影响范围**: `frontend/src/views/emergency/Event.vue`、`frontend/src/api/emergency.js`
+- **来源会话**: 2026-09-19 12:59（commit `ec901531`）
+
+## DEC-027：超时升级链路**决定暂不做**（`[-]`）
+
+- **决策**: FR「待确认报警超 5 分钟升级通知主管」的链路修复**暂缓**，由用户于 2026-09-19 明确决定。**这是决定，不是遗漏。**
+- **原因**:
+  1. 链路当前**完全不通**，且两个成因**互相独立**：① `emergency_service.py:177` 访问 `alarm.emergency_event` 触发懒加载，async 下 `MissingGreenlet` 崩溃；② 扫描只取 `Alarm.status == "pending"` 的报警，而应急事件只在**确认时**（pending → confirmed）创建——**二者互斥，闸门恒空**。
+  2. 成因② 由本会话**独立查出**，peer 会话亦独立得出同一结论（两条都落入 `tests/test_escalation_scan.py` 的 `xfail(strict=True)`）。
+  3. 当前**无任何角色依赖它**：主管收不到升级通知也不会有人察觉，故暂缓的实际风险为零。
+- **影响范围**: 无代码改动。待办池 **P1-015** 状态 `[-]`；`test_escalation_scan.py` 的 2 条 `xfail(strict=True)`
+- **来源会话**: 2026-09-19 12:59
+- **重估条件**: 出现真实依赖「超时升级」的场景时再评估。⚠️ **`strict=True` 是探针**——哪天这两条转绿，测试会**反过来报错**，提醒摘掉 xfail；届时也说明成因已被别人修掉，需重新核对本决策
+
+## DEC-028：角色权限「父子完整性」守卫写成**严格规则、零豁免名单**
+
+- **决策**: 新增 `tests/test_role_permission_hierarchy.py`，规则为「凡角色持有的权限码，其 `parent_code` 指向的码，该角色也必须持有」——**严格，不设豁免名单**。
+- **原因**:
+  1. 能写成严格规则是因为**实测它本来就成立**：修掉两处漏授（`emergency:event` / `linkage:plan`）后，三个角色 77 个权限码**零违规**。
+  2. **没有豁免名单就不会烂成垃圾桶**——对照 `test_permission_coverage.py` 的 `UNENFORCED_ALLOWLIST`，那份豁免里 3 个孤儿码长期挂着（见 P2-014）。豁免一旦存在，新违规会被顺手加进去而不是被修。
+  3. 该守卫覆盖 **P2-012** 的一半（主管全量授权无守卫）：第三条用例钉住「`ROLE_PERM_MAP["chief"]` 为空 **且** `bind_permissions(chief_role, list(perm_map.values()))` 语句在位」两件事——只钉前者可以在别处改硬编码，只钉后者可以同时在清单里堆一长串。
+  4. **刻意没写**「菜单码必须至少被某角色持有」：chief 走全量绑定，每个已定义码必然被持有，那种断言**构造上恒真**。（第一版写了它，跑出来假报 7 个菜单码"无人持有"——因为 `ROLE_PERM_MAP["chief"]` 是空列表、全量授权发生在绑定阶段。已删。）
+- **影响范围**: `backend/tests/test_role_permission_hierarchy.py`（新文件，3 条用例）
+- **来源会话**: 2026-09-19 12:59（commit `765df519`）
+- **回滚条件**: 若未来某角色**确实需要**「持有子权限但不持有父菜单」（例如后端接口权限与前端菜单解耦），届时须**显式讨论并记录理由**，而不是加一条豁免了事
+
+## DEC-029：幽灵权限码**删除**而非补定义
+
+- **决策**: `statistics:partial` 从 `ROLE_PERM_MAP["duty_officer"]` / `["maintainer"]` 中**删除**，**不**在 `BUTTON_PERMS` 里补上定义。
+- **原因**:
+  1. 它是**幽灵码**：只在两处角色清单里出现，`MENU_LEVEL1`/`MENU_LEVEL2`/`BUTTON_PERMS` **都没有定义**。而绑定语句是 `[perm_map[c] for c in ROLE_PERM_MAP[role] if c in perm_map]`——**静默跳过**未定义的码。
+  2. **实测定性**：真实库 `SELECT count(*) FROM permissions WHERE perm_code='statistics:partial'` = **0**，即它**从来没被绑过**；全仓库（`app/`、`frontend/`、测试）**零引用**。删掉是**零行为变化**。
+  3. 反之若补上定义，只会**新增一个没有任何端点校验的孤儿码**——正是 P2-014 在清理的那类东西。
+  4. `docs/plan/3.1` 把它列为「部分报表」按钮（parent = `statistics:report`），但从未落到 `BUTTON_PERMS`。若该按钮仍需要，**正确顺序是先定义、再加回角色清单**。
+- **影响范围**: `backend/scripts/init_data.py`
+- **来源会话**: 2026-09-19 12:59（commit `765df519`）
+- **回滚条件**: 若 3.1 的「部分报表」被重新启用，先在 `BUTTON_PERMS` 定义并**同时**接上端点校验（否则会造出新的孤儿码，`test_permission_coverage.py` 会拦）
+
+## DEC-030：报告导出的 ORM/dict 契约修复**只动 `timelines`**，不顺手改另两个实参
+
+- **决策**: `generate_event_report` 里只把 `timelines` 用 `timeline_payload()` 转换；`event`/`alarm` 的 `dict(obj.__dict__)` **保持原样**。
+- **原因**:
+  1. 崩溃根因**只有一个**：`generate_report_html(event: Dict[str, Any], alarm: Dict[str, Any], timelines: list, ...)` 的形参**声明是 dict**，而 `timelines` 以**纯 ORM 对象**传入 → `.get()` 抛 `AttributeError`。`event`/`alarm` 走了 `__dict__` 转换，是 dict，**没有缺陷**。
+  2. 按「一次只修一个根因、不顺手重构」的纪律，不动能跑的代码。
+  3. **影响面是全坏而非偶发**：崩溃在遍历节点的循环里，空时间轴不触发；而真实事件恒有 `alarm`+`confirm` 两条初始节点（`create_emergency_event` 建的）→ **每个真实事件的报告都导不出**。
+- **影响范围**: `backend/app/services/emergency_report_service.py`、`backend/tests/test_emergency_report.py`
+- **来源会话**: 2026-09-19 12:59（commit `89d63a04`）
+- **⚠️ 连带约束**: `event`/`alarm` 那两句虽能用，但**脆弱**——`event.model_dump()` 分支对 ORM 永远走不到（ORM 无此方法），实际恒走 `__dict__`，会带上 `_sa_instance_state` 且**只含已加载列**。异步下访问未加载列是 `MissingGreenlet`。仓库已有 canonical 序列化器（`event_payload` / `timeline_payload` / `alarm_payload`），**新增报告类代码不要沿用这个写法**，已立 **P2-020**
+
+---
+
 ## 未编号的计划调整（非 ADR，仅备查）
 
 - **开发计划总工期**: 3.1 模块由 W1-W2 调整为 W1-W3（3 周）。来源会话 2026-09-07 22:50。

@@ -336,6 +336,33 @@ cd backend && E2E_BASE_URL=http://localhost:8000/api/v1 python -m pytest -m e2e 
     本会话三次假绿（第 31 条的 `overlayStub`、第 33 条的 `text()` 子串命中、
     本条）**全都是靠变异测试才暴露的**，没有一次是靠读代码看出来的。
 
+35. **按字面量计数断言 HTML 标签闭合，恒假。**
+    实测（2026-09-19，`test_emergency_report.py`）：
+    `assert html_content.count("<div>") == html_content.count("</div>")`
+    → `0 == 12`。因为报告里所有 div 都带属性（`<div class='...'>`），
+    字面量 `<div>` 一个都匹配不到，**左边恒为 0**。
+    正确写法是按**标签名前缀**计数：`count("<div")`。`table` / `tr` / `td` 三条同改。
+    该用例此前一直红着，但红在 **P1-013**（建数据那步就崩），**根本执行不到断言**——
+    P1-013 一修好才暴露出来。见第 37 条。
+
+36. **`await` 一个 ORM 构造函数**（`event = await EmergencyEvent(...)`）。
+    实测 `TypeError: object EmergencyEvent can't be used in 'await' expression`。
+    ORM 对象**不是 awaitable**，构造是同步的；`await` 应当交给显式的 `db_session.flush()`。
+    同一处还留了个元组尾巴 `, None  # 简化创建`——**这类"写坏了但看起来像有意图"的残留
+    最容易骗过 review**，读到不认识的 `await` 先问「这个对象凭什么可等待」。
+
+37. **既有红会让真实缺陷"不被执行"，而不只是"不被注意"。**
+    这是 P1-012「既存红淹没告警」最有力的实证（2026-09-19）：
+    `test_emergency_report.py` 的 **5 条用例一直是红的**，但红在 **P1-013**
+    （`BigInteger` 主键在 SQLite 不自增，**建数据那一步**就崩）——它们
+    **从来没能执行到被测代码**。P1-013 由 peer 修好的当天，
+    「事件报告导出必然 500」当场暴露（`generate_report_html` 的 `timelines`
+    实参以 ORM 对象传入只认 dict 的渲染器）。
+    **推论**：看到"某文件长期红着"，不要假设"它测的东西大概没问题"——
+    它可能**一次都没测过**。修既有红时优先修**能跑起来**的那类
+    （环境/夹具层面的），它解锁的可见性远超它自己的条数。
+
+
 
 ## 七、缺陷与守护用例的绑定规则
 
