@@ -1,7 +1,10 @@
 """
 应急事件核心服务
 3.5 模块 - B2/B3
-- confirm_alarm: 报警确认时自动创建应急事件
+
+- create_emergency_event: 建事件 + 两条初始时间轴；由
+  `alarm_service.confirm_alarm()` 确认真实火警时调用（3.5-B2 的接线在那边，
+  本模块只提供实现）。只 flush 不 commit，与调用方共用一个事务。
 - escalation_scan: 5 分钟超时扫描升级
 """
 
@@ -13,31 +16,96 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.emergency import EmergencyEvent, EmergencyTimeline, Notification
 from app.schemas.emergency import EmergencyTimelineCreate
 from app.core.config import get_settings
+from app.core.timezone import today_in_app_tz
 
 
 settings = get_settings()
+
+
+def _iso(value) -> Optional[str]:
+    """datetime → ISO8601；None 原样返回（前端 formatTime 容忍空值）"""
+    return value.isoformat() if value is not None else None
+
+
+def event_payload(event: EmergencyEvent) -> dict:
+    """
+    应急事件的 JSON 载荷。
+
+    路由声明的是 `response_model=dict`，Pydantic 不会代转 ORM 对象 ——
+    直接把 ORM 塞进 dict 会抛 `PydanticSerializationError` → 500。
+    空表时 items 为空列表、没有对象需要序列化，所以这个缺陷只在
+    **事件真的存在之后**才暴露（即本模块接线修好的那一刻）。
+    """
+    return {
+        "id": event.id,
+        "alarm_id": event.alarm_id,
+        "event_no": event.event_no,
+        "status": event.status,
+        "started_at": _iso(event.started_at),
+        "resolved_at": _iso(event.resolved_at),
+        "closed_at": _iso(event.closed_at),
+        "closed_by": event.closed_by,
+        "summary": event.summary,
+        "created_by": event.created_by,
+        "created_at": _iso(event.created_at),
+        "updated_at": _iso(event.updated_at),
+    }
+
+
+def timeline_payload(node: EmergencyTimeline) -> dict:
+    """时间轴节点的 JSON 载荷"""
+    return {
+        "id": node.id,
+        "event_id": node.event_id,
+        "node_type": node.node_type,
+        "node_title": node.node_title,
+        "description": node.description,
+        "operator_id": node.operator_id,
+        "operated_at": _iso(node.operated_at),
+        "attachments": node.attachments or [],
+        "created_at": _iso(node.created_at),
+    }
+
+
+def user_brief(user) -> Optional[dict]:
+    """用户摘要（详情页的创建人/关闭人），不泄露手机号等敏感字段"""
+    if user is None:
+        return None
+    return {"id": user.id, "username": user.username, "real_name": user.real_name}
 
 
 async def create_emergency_event(
     session: AsyncSession,
     alarm_id: int,
     creator_id: int
-) -> EmergencyEvent:
+) -> Optional[EmergencyEvent]:
     """
     创建应急事件（在真实火警确认时自动调用）
-    
+
+    只 flush 不 commit —— 必须与调用方（confirm_alarm）在同一事务内提交，
+    否则会出现「报警已确认、事件没建」的中间态。
+
     Args:
         session: DB Session
         alarm_id: 关联报警 ID
         creator_id: 创建人 ID
-        
+
     Returns:
-        创建成功的 EmergencyEvent 实例
+        创建成功的 EmergencyEvent 实例；该报警已有事件时返回 None（幂等）
     """
+    # 幂等：一条报警最多一个处置事件（emergency_events.alarm_id 有唯一约束，
+    # 这里显式短路，避免把唯一约束冲突留给调用方去处理）
+    existing = await session.execute(
+        select(EmergencyEvent).where(EmergencyEvent.alarm_id == alarm_id)
+    )
+    if existing.scalars().first() is not None:
+        return None
+
     # 生成事件编号 EV-YYYYMMDD-NNN
-    today = datetime.now()
-    date_str = today.strftime("%Y%m%d")
-    
+    # 日期段问的是「今天是几号」——容器跑 UTC，直接 datetime.now() 会在
+    # 北京时间 00:00–08:00 之间产出前一天的编号，故走业务时区（app/core/timezone.py）。
+    date_str = today_in_app_tz().strftime("%Y%m%d")
+
     # 查询今日已有事件数
     stmt = select(EmergencyEvent).where(
         EmergencyEvent.event_no.startswith(f"EV-{date_str}-")
@@ -226,6 +294,10 @@ async def add_timeline_node(
     )
     session.add(timeline)
     await session.flush()
+    # `operated_at` / `created_at` 是 server_default 列：flush 后取值会在**同步**栈上
+    # 触发懒加载刷新，async 下即 MissingGreenlet → 500。显式 refresh 把这一步变成
+    # 可 await 的 IO。
+    await session.refresh(timeline)
     return timeline
 
 
@@ -267,8 +339,10 @@ async def resolve_emergency_event(
         operator_id=resolver_id
     )
     session.add(timeline)
-    
+
     await session.flush()
+    # `updated_at` 带 onupdate，flush 后取值同样会触发同步懒加载 → MissingGreenlet
+    await session.refresh(event)
     return event
 
 
@@ -317,8 +391,9 @@ async def close_emergency_event(
             operator_id=closer_id
         )
         session.add(timeline)
-    
+
     await session.flush()
+    await session.refresh(event)
     return event
 
 

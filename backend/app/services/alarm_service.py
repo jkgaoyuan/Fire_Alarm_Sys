@@ -27,6 +27,7 @@ from app.models.user import User
 from app.schemas.alarm import AlarmConfirmRequest, AlarmResetRequest
 from app.services import event_stream
 from app.services.device_service import write_status_log
+from app.services.emergency_service import create_emergency_event
 from app.services.monitor_service import resolve_visible_org_ids
 
 settings = get_settings()
@@ -181,12 +182,23 @@ async def confirm_alarm(
     user: User,
     payload: AlarmConfirmRequest,
 ) -> Alarm:
-    """FR-025/FR-026 确认（3.3 只交付最小状态流转，处置闭环属 3.5）"""
+    """
+    FR-025/FR-026 确认；真实火警在**同一事务内**开启应急处置闭环（3.5-B2 / FR-027）。
+
+    确认与建事件不可分割：先 flush 事件再 commit，避免「报警已确认、事件没建」
+    的中间态 —— 这个中间态正是本接线长期缺失时的表现。
+    """
     alarm = await get_alarm_for_user(db, alarm_id, user)
 
     target = "false_alarm" if payload.confirm_result == "false_alarm" else "confirmed"
     if not can_transition(alarm.status, target):
         raise AuthError(400, f"报警当前状态 {alarm.status}，不可确认为 {target}")
+
+    # 演练告警不是真实火警，不能走「现场属实」：3.8 口径下它本就不建应急事件，
+    # 放行只会得到一条与处置台账对不上的确认记录。误报路径仍然开放，
+    # 否则演练告警会永久卡在 pending。
+    if target == "confirmed" and alarm.is_drill:
+        raise AuthError(400, "演练告警不能确认为真实火警")
 
     alarm.status = target
     alarm.confirmed_by = user.id
@@ -195,10 +207,28 @@ async def confirm_alarm(
     if target == "false_alarm":
         alarm.false_reason = payload.false_reason
     db.add(alarm)
+
+    event = None
+    if target == "confirmed":
+        event = await create_emergency_event(db, alarm.id, user.id)
+
     await db.commit()
 
     fresh = await alarm_crud.reload(db, alarm_id)
     await publish(redis, "alarm_confirmed", alarm_payload(fresh))
+    # 事件推送放在 commit 之后：推送失败不能回滚已提交的确认与事件
+    if event is not None:
+        await publish(
+            redis,
+            "emergency_new",
+            {
+                "event_id": event.id,
+                "event_no": event.event_no,
+                "alarm_id": alarm_id,
+                "org_id": fresh.org_id,
+                "created_by": user.id,
+            },
+        )
     return fresh
 
 

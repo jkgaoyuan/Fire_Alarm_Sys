@@ -24,7 +24,6 @@ from app.schemas.alarm import (
     AlarmResetRequest,
 )
 from app.services import alarm_service
-from app.services.emergency_service import create_emergency_event
 
 router = APIRouter()
 
