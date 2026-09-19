@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.schemas.emergency import EventReportRequest
+from app.services.emergency_service import timeline_payload
 
 
 def generate_report_html(
@@ -159,7 +160,12 @@ async def generate_event_report(
     timeline_stmt = select(EmergencyTimeline).where(EmergencyTimeline.event_id == event_id)\
         .order_by(EmergencyTimeline.operated_at.asc())
     result = await db.execute(timeline_stmt)
-    timelines = result.scalars().all()
+    # 必须转成 dict：`generate_report_html` 的契约是 `timelines: list`（元素按
+    # dict 用 `.get()`）。此前直接把 ORM 对象传进去，第 110 行 `.get()` 必抛
+    # `AttributeError: 'EmergencyTimeline' object has no attribute 'get'` ——
+    # 凡是**有时间轴节点**的事件导出报告都 500（真实事件恒有 alarm/confirm 两条，
+    # 所以等于全坏）。用 canonical payload 转换，不手搓字段。
+    timelines = [timeline_payload(node) for node in result.scalars().all()]
     
     # 查询报警
     alarm_stmt = select(Alarm).where(Alarm.id == event.alarm_id)

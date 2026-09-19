@@ -108,13 +108,17 @@ class TestReportGeneration:
         db_session.add(alarm)
         await db_session.flush()
         
-        event = await EmergencyEvent(
+        # 这里原先写成 `event = await EmergencyEvent(...), None  # 简化创建`
+        # —— 对 ORM 构造函数 await（`TypeError: object EmergencyEvent can't be
+        # used in 'await' expression`）外加一个元组尾巴。ORM 对象不是 awaitable，
+        # 构造是同步的，await 交给下面显式的 flush。
+        event = EmergencyEvent(
             alarm_id=alarm.id,
             event_no="EV-20260910-002",
             status="resolved",
             summary="处置完成",
             created_by=test_user.id
-        ), None  # 简化创建
+        )
         
         # 手动添加
         db_session.add(event)
@@ -300,11 +304,14 @@ class TestReportFormatting:
         
         assert http_status == 200
         
-        # 验证 HTML 标签闭合
-        assert html_content.count("<div>") == html_content.count("</div>")
-        assert html_content.count("<table>") == html_content.count("</table>")
-        assert html_content.count("<tr>") == html_content.count("</tr>")
-        assert html_content.count("<td>") == html_content.count("</td>")
+        # 验证 HTML 标签闭合。
+        # 凡带属性的开标签（`<div class='...'>`）都不等于字面量 `<div>`，
+        # 按字面量计数会恒为 0（实测 `<div>` 0 个 vs `</div>` 12 个），
+        # 断言恒假——故统一按**标签名前缀**计数。
+        assert html_content.count("<div") == html_content.count("</div>")
+        assert html_content.count("<table") == html_content.count("</table>")
+        assert html_content.count("<tr") == html_content.count("</tr>")
+        assert html_content.count("<td") == html_content.count("</td>")
         
         # 应包含完整的 HTML 文档结构
         assert "<html" in html_content
