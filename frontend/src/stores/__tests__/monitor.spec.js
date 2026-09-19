@@ -117,6 +117,27 @@ describe('monitor store', () => {
     expect(compareAlarms(stale, { ...stale, created_at: 'not-a-date' })).toBeLessThan(0)
   })
 
+  it('演练告警不进大屏徽标与地图着色（FR-045 隔离）', () => {
+    const store = useMonitorStore()
+
+    store.handleFrame({ type: 'alarm_new', data: alarm(1, { alarm_type: 'fire' }) })
+    expect(store.pendingFireCount).toBe(1)
+    expect([...store.activeAlarmDeviceIds]).toEqual([101])
+
+    store.handleFrame({
+      type: 'alarm_new',
+      data: alarm(9, { alarm_type: 'fire', is_drill: true }),
+    })
+
+    // 帧本身必须留在 alarms 里：报警中心把 WS 帧与 REST 结果合并，
+    // 它的「含演练」开关（Center.vue:63）正是靠这份增量做实时显隐。
+    expect(store.alarms.map((a) => a.alarm_id)).toContain(9)
+    // 但大屏那两处派生量不能被它带偏 —— 大屏的报警列表（AlarmList.vue:75）
+    // 把演练全滤掉了，徽标与地图若还算进去，就会出现「徽标 1、列表空」「地图红、列表空」。
+    expect(store.pendingFireCount).toBe(1)
+    expect([...store.activeAlarmDeviceIds]).toEqual([101])
+  })
+
   it('resync_required 时清空增量并全量刷新', async () => {
     const store = useMonitorStore()
     await store.bootstrap()

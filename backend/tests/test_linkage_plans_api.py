@@ -17,6 +17,7 @@
 import pytest
 
 from app.models.organization import Organization
+from app.services import event_stream
 from tests.auth_helpers import auth_headers, create_user_with_perms
 
 LIST_URL = "/api/v1/linkage-plans"
@@ -466,6 +467,63 @@ async def test_simulate_alarm_is_visible_as_drill(client, db_session, monkeypatc
     shown = await client.get("/api/v1/alarms?include_drill=true", headers=headers)
     item = next(a for a in shown.json()["data"]["items"] if a["id"] == alarm_id)
     assert item["is_drill"] is True
+
+
+@pytest.mark.asyncio
+async def test_simulate_broadcasts_alarm_new_frame(
+    client, db_session, fake_redis, monkeypatch
+):
+    """
+    TC-LP-020: 演练告警必须广播 `alarm_new`，否则报警中心开着也看不见它。
+
+    报警中心（`Center.vue`）把 WS 帧与 REST 结果合并，再按「含演练」开关决定显隐；
+    `alarm_payload` 带 `is_drill`（`alarm_service.py:99`）正是为了让消费端能过滤。
+    不广播的后果是：**唯一被设计成能看演练告警的界面，反而要靠手动刷新**。
+    真实上报路径（`device_report_service.py:144`）与联动引擎次级告警都广播，
+    只有模拟端点漏了——af3a8e88 的提交信息把「不广播」列为要修的毛病，
+    重写时补了告警与联动，却漏了这一截。
+
+    演练不改设备状态，所以这里**只该有一条帧**：多出 `device_status`
+    说明有代码顺手翻了 `devices.status`（那会把演练混进设备真实状态）。
+    """
+    _stub_execute(monkeypatch)
+    headers, plan_id, _org_obj, _device = await _sim_env(client, db_session, "broadcast")
+
+    resp = await client.post(f"{LIST_URL}/{plan_id}/simulate", headers=headers)
+    assert resp.status_code == 200, resp.text
+
+    frames = await event_stream.read_after(fake_redis, "0-1", 100)
+    assert [f["type"] for f in frames] == ["alarm_new"], (
+        f"期望恰好一条 alarm_new，实际 {[f['type'] for f in frames]}"
+    )
+    assert frames[0]["data"]["alarm_id"] == resp.json()["data"]["alarm_id"]
+    assert frames[0]["data"]["is_drill"] is True
+
+
+@pytest.mark.asyncio
+async def test_simulate_repeat_does_not_rebroadcast(
+    client, db_session, fake_redis, monkeypatch
+):
+    """
+    TC-LP-021: 重复点模拟复用既有演练告警，不再重复广播。
+
+    与上报路径同口径（`device_report_service.py:144` 只在 `alarm_created` 时广播）：
+    第二次模拟走的是 `raise_alarm` 的去重分支，没有新告警产生，
+    再广播一次会让报警中心把同一条演练告警当成新的推送两遍。
+    """
+    _stub_execute(monkeypatch)
+    headers, plan_id, _org_obj, _device = await _sim_env(client, db_session, "rebroadcast")
+
+    first = await client.post(f"{LIST_URL}/{plan_id}/simulate", headers=headers)
+    second = await client.post(f"{LIST_URL}/{plan_id}/simulate", headers=headers)
+    assert (
+        first.json()["data"]["alarm_id"] == second.json()["data"]["alarm_id"]
+    ), "第二次模拟应当复用同一条演练告警"
+
+    frames = await event_stream.read_after(fake_redis, "0-1", 100)
+    assert [f["type"] for f in frames] == ["alarm_new"], (
+        f"幂等复用不该再广播，实际 {[f['type'] for f in frames]}"
+    )
 
 
 @pytest.mark.asyncio

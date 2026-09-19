@@ -58,14 +58,29 @@ export const useMonitorStore = defineStore('monitor', () => {
   /** 正在使用实时推送的页面数；页面切换时卸载/挂载先后顺序不定，必须计数 */
   let consumers = 0
 
+  /**
+   * 大屏两处派生量一律排除演练（FR-045 隔离）。
+   *
+   * `alarms` 本身**必须**保留演练帧——报警中心把它与 REST 结果合并，
+   * 靠「含演练」开关决定显隐（Center.vue:363/402），那是演练告警唯一的实时增量来源。
+   * 但大屏的报警列表无条件滤掉演练（AlarmList.vue:75），所以大屏的徽标与地图着色
+   * 若还把它们算进去，就会出现「徽标 1、列表空」「地图红、列表空」这种
+   * 用户无从解释、也无从关掉的状态。
+   */
   const pendingFireCount = computed(
-    () => alarms.value.filter((a) => a.status === 'pending' && a.alarm_type === 'fire').length
+    () =>
+      alarms.value.filter(
+        (a) => a.status === 'pending' && a.alarm_type === 'fire' && !a.is_drill
+      ).length
   )
   const visibleAlarms = computed(() => sortAlarms(alarms.value))
   const connected = computed(() => connection.value === 'open')
-  /** 地图点位着色：TopN 列表内仍有未收敛报警的设备 */
+  /** 地图点位着色：TopN 列表内仍有未收敛报警的设备（演练除外） */
   const activeAlarmDeviceIds = computed(
-    () => new Set(alarms.value.filter(isUnresolved).map((a) => a.device_id))
+    () =>
+      new Set(
+        alarms.value.filter((a) => isUnresolved(a) && !a.is_drill).map((a) => a.device_id)
+      )
   )
 
   async function refreshDashboard() {

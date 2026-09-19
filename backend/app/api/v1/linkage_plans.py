@@ -9,12 +9,14 @@
 from datetime import datetime
 from typing import Optional
 
+import redis.asyncio as aioredis
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from app.core.dependencies import get_db, require_permission, get_current_active_user
+from app.db.redis import get_redis_pool
 from app.models.device import Device
 from app.models.linkage import LinkagePlan, AlarmLinkageLog
 from app.models.user import User
@@ -29,8 +31,9 @@ from app.schemas.linkage import (
     LinkageExecuteResult,
     LinkageSimulateResult,
 )
+from app.crud.alarm import alarm_crud
 from app.crud.linkage import linkage_plan_crud, alarm_linkage_log_crud
-from app.services.alarm_service import raise_alarm
+from app.services.alarm_service import alarm_payload, publish, raise_alarm
 from app.services.linkage_engine_service import linkage_engine
 from app.services.linkage_executor import execute_action
 
@@ -367,6 +370,7 @@ async def simulate_linkage_trigger(
     plan_id: int,
     remark: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
+    redis: aioredis.Redis = Depends(get_redis_pool),
     user: User = Depends(get_current_active_user),
 ):
     """
@@ -381,6 +385,9 @@ async def simulate_linkage_trigger(
     交给引擎匹配并执行 → 回报命中了哪些预案。演练告警不进统计
     （statistics_service）、不触发应急升级（emergency_service），
     但要「含演练」筛选才在报警中心可见（与既有约定一致）。
+
+    产生的告警会广播 `alarm_new`：这是报警中心的实时增量来源，否则
+    「含演练」开关打开了也得手动刷新才看得见——那正是本次重写要修的毛病。
     """
     plan = await _load_plan(db, plan_id)
     if not plan:
@@ -426,6 +433,19 @@ async def simulate_linkage_trigger(
         # 既有的是上次演练留下的 → 复用它，重复点击即幂等
 
     await db.commit()
+
+    # 广播给已打开的大屏 / 报警中心。与上报路径同口径
+    # （`device_report_service.handle_device_report`）：只在**新建**报警时推，
+    # 幂等复用不重复推，否则报警中心会把同一条演练告警当成新的播两遍。
+    #
+    # 只推 `alarm_new`，**不推 `device_status`**：模拟不改变设备状态
+    # （`raise_alarm` 不写 `devices.status`），推了等于凭空宣告一次状态变更。
+    #
+    # 演练帧不会误鸣笛——前端已按 `is_drill` 拦下（`stores/monitor.js:207`），
+    # 报警中心的「含演练」开关也正需要这份增量做实时显隐（`Center.vue:363`）。
+    if created:
+        fresh = await alarm_crud.get_with_relations(db, alarm.id)
+        await publish(redis, "alarm_new", alarm_payload(fresh))
 
     # 只回报本次新产生的日志：复用演练告警时，库里还有上一轮的记录
     before_id = (await db.execute(

@@ -181,6 +181,32 @@ async def test_map_devices_filters_by_viewport_and_scope(db_session, client, mon
     assert sorted(i["device_code"] for i in mine["items"]) == ["DP-A1", "DP-A2", "DP-A3"]
 
 
+async def test_map_devices_excludes_drill_from_active_alarm(db_session, client, monitor_env):
+    """
+    TC-MON-020: 地图点位的 `has_active_alarm` 不认演练告警（FR-045 隔离）。
+
+    大屏报警列表（`AlarmList.vue:75`）已把演练全滤掉。地图若照旧把演练算作
+    「有活动报警」，就会出现**列表空着、地图红着**的自相矛盾——而大屏没有
+    「含演练」开关，用户无从解释这个红点，也无从关掉它。
+    `_active_alarm_map` 是这条标记的唯一来源，且只被 map/devices 使用。
+    """
+    env = monitor_env
+    real = await _dev(db_session, env, env["a"], "DM-REAL", "alarm", map_x=100, map_y=100)
+    drill = await _dev(db_session, env, env["a"], "DM-DRILL", "alarm", map_x=200, map_y=200)
+    await create_alarm(db_session, real, "fire")
+    await create_alarm(db_session, drill, "fire", is_drill=True)
+
+    data = await _get(client, env["chief"], "/api/v1/monitor/map/devices")
+    by_code = {p["device_code"]: p for p in data["items"]}
+
+    assert by_code["DM-REAL"]["has_active_alarm"] is True
+    assert by_code["DM-REAL"]["alarm_type"] == "fire"
+    assert by_code["DM-DRILL"]["has_active_alarm"] is False, (
+        "演练告警不该把地图点位标成活动报警"
+    )
+    assert by_code["DM-DRILL"]["alarm_type"] is None
+
+
 async def test_map_devices_aggregates_when_over_limit(db_session, client, monitor_env):
     """点位数超过 limit 时切 10×10 网格聚合，桶内 count 之和等于 total"""
     env = monitor_env

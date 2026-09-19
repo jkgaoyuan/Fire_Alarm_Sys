@@ -308,12 +308,22 @@ async def get_map_devices(
 
 
 async def _active_alarm_map(db: AsyncSession, device_ids: list[int]) -> dict[int, str]:
-    """一次性取各设备的活动报警类型，避免逐设备 N+1"""
+    """
+    一次性取各设备的活动报警类型，避免逐设备 N+1。
+
+    排除演练（FR-045 隔离）：大屏报警列表（`AlarmList.vue:75`）已把演练全滤掉，
+    地图若仍把演练算作「有活动报警」，就会出现**列表空着、地图红着**的矛盾，
+    而大屏没有「含演练」开关，用户无从解释也无从关掉那个红点。
+    """
     if not device_ids:
         return {}
     rows = await db.execute(
         select(Alarm.device_id, Alarm.alarm_type)
-        .where(Alarm.device_id.in_(device_ids), Alarm.status.in_(OPEN_ALARM_STATUSES))
+        .where(
+            Alarm.device_id.in_(device_ids),
+            Alarm.status.in_(OPEN_ALARM_STATUSES),
+            Alarm.is_drill.is_(False),
+        )
         .order_by(Alarm.device_id, Alarm.id.desc())
     )
     active: dict[int, str] = {}
