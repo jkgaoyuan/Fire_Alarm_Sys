@@ -21,7 +21,7 @@ class LinkagePlanBase(BaseModel):
         None, 
         description="触发报警类型：fire/pre_fire/fault/shield"
     )
-    actions: list[dict] = Field(default=list, description="动作列表")
+    actions: list[dict] = Field(default_factory=list, description="动作列表")
     is_enabled: bool = Field(True, description="是否启用")
     is_simulation_allowed: bool = Field(True, description="是否允许模拟测试")
 

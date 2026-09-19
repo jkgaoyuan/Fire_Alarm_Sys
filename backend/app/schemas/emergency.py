@@ -65,7 +65,7 @@ class EmergencyTimelineBase(BaseModel):
     node_type: str = Field(..., max_length=50, description="节点类型：alarm/confirm/linkage/escalation/evacuate/control/check_in/photo/complete")
     node_title: Optional[str] = Field(None, max_length=100, description="节点标题")
     description: Optional[str] = Field(None, description="描述")
-    attachments: list[dict] = Field(default=list, description="附件 [{type, url}] 仅支持照片")
+    attachments: list[dict] = Field(default_factory=list, description="附件 [{type, url}] 仅支持照片")
 
 
 class EmergencyTimelineCreate(EmergencyTimelineBase):
