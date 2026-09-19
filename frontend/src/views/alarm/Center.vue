@@ -222,7 +222,7 @@
         </el-form-item>
         <el-form-item label="确认结论">
           <el-radio-group v-model="confirmForm.confirm_result">
-            <el-radio value="real">现场属实</el-radio>
+            <el-radio value="real" :disabled="current?.is_drill">现场属实</el-radio>
             <el-radio value="false_alarm">误报</el-radio>
           </el-radio-group>
         </el-form-item>
@@ -242,7 +242,16 @@
             />
           </el-form-item>
         </template>
-        <el-alert v-if="confirmForm.confirm_result === 'real'" title="提示" type="info" :closable="false" show-icon>
+        <el-alert
+          v-if="current?.is_drill"
+          title="演练告警"
+          type="warning"
+          :closable="false"
+          show-icon
+        >
+          这是演练告警，不能确认为真实火警，也不会创建应急处置事件。
+        </el-alert>
+        <el-alert v-else-if="confirmForm.confirm_result === 'real'" title="提示" type="info" :closable="false" show-icon>
           确认为真实火警后，系统将自动创建<strong>应急处置事件</strong>，并启动处置流程。
         </el-alert>
       </el-form>
@@ -488,7 +497,9 @@ function openRow(row) {
 
 function openConfirm(row) {
   current.value = row
-  confirmForm.confirm_result = 'real'
+  // 演练告警不能确认为真实火警（后端同口径拒绝），默认落在误报上，
+  // 免得用户一点「提交确认」就撞 400
+  confirmForm.confirm_result = row?.is_drill ? 'false_alarm' : 'real'
   confirmForm.false_reason = null
   confirmForm.remark = ''
   confirmVisible.value = true
