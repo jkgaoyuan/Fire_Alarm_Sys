@@ -6,6 +6,7 @@
 from sqlalchemy import BigInteger, Boolean, Column, DateTime, ForeignKey, JSON, String, Text, func
 from sqlalchemy.orm import relationship
 from app.models.base import Base
+from app.models.types import bigint_pk
 
 
 class EmergencyEvent(Base):
@@ -15,7 +16,7 @@ class EmergencyEvent(Base):
     """
     __tablename__ = "emergency_events"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(bigint_pk(), primary_key=True, autoincrement=True)
     alarm_id = Column(BigInteger, ForeignKey("alarms.id"), unique=True, index=True, nullable=False)
     event_no = Column(String(50), unique=True, nullable=False)  # EV-YYYYMMDD-NNN
     status = Column(String(20), default="processing")  # processing / resolved / closed
@@ -41,7 +42,7 @@ class EmergencyTimeline(Base):
     """
     __tablename__ = "emergency_timelines"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(bigint_pk(), primary_key=True, autoincrement=True)
     event_id = Column(BigInteger, ForeignKey("emergency_events.id"), index=True, nullable=False)
     node_type = Column(String(50), nullable=False)  # alarm / confirm / linkage / escalation / evacuate / control / check_in / photo / complete
     node_title = Column(String(100), nullable=True)
@@ -63,7 +64,7 @@ class Notification(Base):
     """
     __tablename__ = "notifications"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(bigint_pk(), primary_key=True, autoincrement=True)
     user_id = Column(BigInteger, ForeignKey("users.id"), index=True, nullable=False)
     title = Column(String(100), nullable=False)
     content = Column(Text, nullable=True)
