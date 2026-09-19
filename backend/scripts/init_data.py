@@ -182,8 +182,13 @@ ROLE_PERM_MAP = {
         "statistics:export",
         # 联动预案（值班员只能查看和执行）
         "linkage:view", "linkage:execute",
-        # 应急处置（值班员可参与时间轴记录）
-        "emergency:view", "emergency:timeline",
+        # 应急处置（值班员可进入页面、参与时间轴记录；处置完成/关闭/导出仍限主管）
+        #
+        # `emergency:event` 是**菜单码**，此前漏授予。菜单树只取 perm_type='menu'
+        # 且不做「父菜单随子权限自动补齐」（permission_service.build_menu_tree），
+        # 所以缺它时值班员虽有 view/timeline，侧边栏看不到入口、路由也生成不出来
+        # —— 那两个按钮权限等于白给。参照 drill:event 的写法，菜单码与同域按钮放一起。
+        "emergency:event", "emergency:view", "emergency:timeline",
         # 消防演练（OQ-5 方案一：值班员可查看与执行演练）
         "drill:event", "drill:view", "drill:execute",
     ],
